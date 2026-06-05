@@ -17,6 +17,12 @@
   <!-- Core Tailwind-equivalent CSS & Visual Polish (app.css) -->
   <link rel="stylesheet" href="app-v2.css?v=1.5.2">
   
+  <!-- PWA Manifest & Mobile Icons -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="icon.png">
+  
   <!-- Libraries (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -1990,5 +1996,16 @@
 
   <!-- Main JavaScript App Controller (app.js) -->
   <script type="module" src="app-v2.js?v=1.5.7"></script>
+  
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+          .then(reg => console.log('Service Worker registered successfully!', reg))
+          .catch(err => console.error('Service Worker registration failed:', err));
+      });
+    }
+  </script>
 </body>
 </html>
