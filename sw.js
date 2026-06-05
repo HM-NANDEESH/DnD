@@ -7,7 +7,8 @@ const ASSETS_TO_CACHE = [
   'app.js',
   'db.js',
   'audio.js',
-  'icon.png'
+  'icon.png',
+  'icon_192.png'
 ];
 
 self.addEventListener('install', (event) => {
