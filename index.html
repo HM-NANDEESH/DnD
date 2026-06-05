@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>DnD | Premium Habit Tracker & Life Journal</title>
   
   <!-- SEO Meta Tags -->
@@ -15,7 +15,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Caveat:wght@400..700&family=Lilita+One&family=Sacramento&family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
   
   <!-- Core Tailwind-equivalent CSS & Visual Polish (app.css) -->
-  <link rel="stylesheet" href="app-v2.css?v=1.5.8">
+  <link rel="stylesheet" href="app-v2.css?v=1.5.9">
   
   <!-- PWA Manifest & Mobile Icons -->
   <link rel="manifest" href="manifest.json">
@@ -714,8 +714,12 @@
                   <!-- Top controls bar (Emoji on left; Style, Pin, Archive, Hide, Trash on right) -->
                   <div id="notes-editor-top-bar" style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; margin-bottom: 2rem;">
                     
-                    <!-- Left: Emoji trigger badge followed by AI tags -->
+                    <!-- Left: Mobile Back Button & Emoji trigger badge followed by AI tags -->
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
+                      <button type="button" class="border-btn" id="btn-notes-mobile-back" style="display: none; align-items: center; gap: 0.25rem; padding: 0.6rem; border-radius: 8px; height: 38px; font-size: 0.85rem; font-weight: 600; color: #fff; background: transparent; border: 1px solid var(--border-glass); cursor: pointer;">
+                        <i data-lucide="chevron-left" style="width: 16px; height: 16px;"></i>
+                        <span>Back</span>
+                      </button>
                       <div class="note-emoji-preview-badge" id="note-emoji-trigger" title="Change page emoji" style="width: 50px; height: 50px; font-size: 1.8rem; cursor: pointer; display: flex; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.98); border: 2px solid var(--border-glass-strong); border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 10; transition: transform 0.2s; margin-top: 0 !important;">
                         <!-- Twemoji loaded here -->
                       </div>

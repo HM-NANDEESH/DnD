@@ -5527,6 +5527,15 @@ function initNotesWorkspace() {
     btnAddEmpty.addEventListener('click', () => createNewNotePage());
   }
 
+  // Mobile Back Button binding
+  const btnMobileBack = document.getElementById('btn-notes-mobile-back');
+  if (btnMobileBack) {
+    btnMobileBack.addEventListener('click', () => {
+      state.activeNoteId = null;
+      loadActiveNoteIntoEditor();
+    });
+  }
+
   // 4. Editor Title field real-time update
   const titleField = document.getElementById('note-editor-title');
   if (titleField) {
