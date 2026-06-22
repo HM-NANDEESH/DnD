@@ -1107,9 +1107,11 @@ async function silentTokenRefresh() {
       if (usernameDesc) usernameDesc.innerText = `Logged in via Web Account (${data.user.email})`;
       if (btnLogout) btnLogout.style.display = 'inline-block';
       
-      // Hide auth overlay if visible
+      // Hide auth overlay (user is already logged in)
       const overlay = document.getElementById('web-auth-overlay');
       if (overlay) overlay.style.display = 'none';
+      const loadingView = document.getElementById('web-auth-loading-view');
+      if (loadingView) loadingView.style.display = 'none';
       return true;
     }
   } catch (err) {
@@ -1157,6 +1159,10 @@ function showWebAuthOverlay(view) {
     return;
   }
   overlay.style.display = 'flex';
+  
+  // Hide the loading spinner
+  const loadingView = document.getElementById('web-auth-loading-view');
+  if (loadingView) loadingView.style.display = 'none';
   
   // Hide all forms and views
   const welcomeView = document.getElementById('web-auth-welcome-view');

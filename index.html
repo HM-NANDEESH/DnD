@@ -2959,7 +2959,7 @@
   </div>
 
   <!-- ================= DIALOG: WEB FULLSCREEN AUTH OVERLAY ================= -->
-  <div id="web-auth-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #090d16; z-index: 3500; align-items: center; justify-content: center; padding: 1.5rem; box-sizing: border-box; overflow-y: auto; font-family: var(--font-primary);">
+  <div id="web-auth-overlay" style="display: flex; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #090d16; z-index: 3500; align-items: center; justify-content: center; padding: 1.5rem; box-sizing: border-box; overflow-y: auto; font-family: var(--font-primary);">
     <div class="modal-card" style="max-width: 440px; width: 100%; border-radius: 20px; padding: 2.2rem 2rem; border: 1px solid rgba(255,255,255,0.08); background: rgba(15, 23, 42, 0.95); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); position: relative;">
       <!-- Back to Welcome button -->
       <button type="button" id="btn-auth-back-to-welcome" style="display: none; position: absolute; top: 1.25rem; left: 1.25rem; background: none; border: none; color: #94a3b8; cursor: pointer; padding: 0.25rem; transition: all 0.2s; z-index: 100; border-radius: 50%;" onmouseover="this.style.color='#fff'; this.style.background='rgba(255,255,255,0.06)'" onmouseout="this.style.color='#94a3b8'; this.style.background='none'">
@@ -3139,6 +3139,12 @@
       </div>
 
       <!-- VIEW 0: WELCOME SCREEN -->
+      <!-- VIEW: AUTH LOADING SPINNER (shown while checking session) -->
+      <div id="web-auth-loading-view" style="display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%; padding: 3rem 0;">
+        <div style="width: 48px; height: 48px; border: 3px solid rgba(255,255,255,0.08); border-top-color: #a855f7; border-radius: 50%; animation: authSpinner 0.8s linear infinite; margin-bottom: 1.5rem;"></div>
+        <p style="font-size: 0.9rem; color: #64748b; font-weight: 600;">Checking session...</p>
+      </div>
+
       <div id="web-auth-welcome-view" style="display: none; flex-direction: column; align-items: center; text-align: center; width: 100%; animation: welcomeFadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);">
         <!-- Animated Logo Container -->
         <div class="welcome-logo-container" style="margin-bottom: 2rem; position: relative;">
