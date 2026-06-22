@@ -1,0 +1,17 @@
+# Ignore native mobile platforms
+android/
+ios/
+
+# Ignore node modules and local envs
+node_modules/
+.env
+.env.*
+
+# Ignore temporary and scratch directories
+scratch/
+.github/
+
+# Ignore large raw PNG wallpapers (the PWA uses optimized .webp versions)
+*.png
+!icon.png
+!icon_192.png
