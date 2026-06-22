@@ -4,6 +4,26 @@ const path = require('path');
 const DB_DIR = path.join(__dirname, '..', 'data');
 const DB_FILE = path.join(DB_DIR, 'db.json');
 
+let client = null;
+let db = null;
+let MongoClient = null;
+
+async function getDb() {
+  if (db) return db;
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error('MONGODB_URI is not defined');
+  
+  if (!MongoClient) {
+    MongoClient = require('mongodb').MongoClient;
+  }
+  
+  client = new MongoClient(uri);
+  await client.connect();
+  db = client.db();
+  console.log('[Database] Connected to MongoDB Atlas successfully.');
+  return db;
+}
+
 function ensureDbExists() {
   if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });
@@ -13,48 +33,51 @@ function ensureDbExists() {
   }
 }
 
-function readDb() {
+async function readDb() {
   ensureDbExists();
   try {
-    const data = fs.readFileSync(DB_FILE, 'utf8');
+    const data = await fs.promises.readFile(DB_FILE, 'utf8');
     return JSON.parse(data);
   } catch (err) {
     console.error('Error reading JSON DB, resetting:', err);
     const empty = { users: [], otps: [] };
-    fs.writeFileSync(DB_FILE, JSON.stringify(empty, null, 2));
+    await fs.promises.writeFile(DB_FILE, JSON.stringify(empty, null, 2));
     return empty;
   }
 }
 
-function writeDb(data) {
+async function writeDb(data) {
   ensureDbExists();
-  // Atomic write to avoid corruption
   const tempFile = `${DB_FILE}.tmp`;
-  fs.writeFileSync(tempFile, JSON.stringify(data, null, 2));
-  fs.renameSync(tempFile, DB_FILE);
+  await fs.promises.writeFile(tempFile, JSON.stringify(data, null, 2));
+  await fs.promises.rename(tempFile, DB_FILE);
 }
 
 const dbService = {
-  getUsers() {
-    return readDb().users;
+  async getUsers() {
+    if (process.env.MONGODB_URI) {
+      const database = await getDb();
+      return await database.collection('users').find({}).toArray();
+    } else {
+      const dbData = await readDb();
+      return dbData.users;
+    }
   },
 
-  getUserByEmail(email) {
+  async getUserByEmail(email) {
     if (!email) return null;
     const normalized = email.toLowerCase().trim();
-    return this.getUsers().find(u => u.email.toLowerCase().trim() === normalized) || null;
+    if (process.env.MONGODB_URI) {
+      const database = await getDb();
+      return await database.collection('users').findOne({ email: normalized });
+    } else {
+      const users = await this.getUsers();
+      return users.find(u => u.email.toLowerCase().trim() === normalized) || null;
+    }
   },
 
-  createUser(user) {
-    const db = readDb();
+  async createUser(user) {
     const normalizedEmail = user.email.toLowerCase().trim();
-    
-    // Check duplication
-    const exists = db.users.some(u => u.email.toLowerCase().trim() === normalizedEmail);
-    if (exists) {
-      throw new Error('User already exists');
-    }
-
     const newUser = {
       name: user.name.trim(),
       email: normalizedEmail,
@@ -67,38 +90,75 @@ const dbService = {
       ssoProvider: user.ssoProvider || null
     };
 
-    db.users.push(newUser);
-    writeDb(db);
-    return newUser;
+    if (process.env.MONGODB_URI) {
+      const database = await getDb();
+      // Check duplication
+      const exists = await database.collection('users').findOne({ email: normalizedEmail });
+      if (exists) {
+        throw new Error('User already exists');
+      }
+      await database.collection('users').insertOne(newUser);
+      return newUser;
+    } else {
+      const dbData = await readDb();
+      // Check duplication
+      const exists = dbData.users.some(u => u.email.toLowerCase().trim() === normalizedEmail);
+      if (exists) {
+        throw new Error('User already exists');
+      }
+      dbData.users.push(newUser);
+      await writeDb(dbData);
+      return newUser;
+    }
   },
 
-  updateUser(email, updates) {
-    const db = readDb();
+  async updateUser(email, updates) {
+    if (!email) return null;
     const normalized = email.toLowerCase().trim();
-    const index = db.users.findIndex(u => u.email.toLowerCase().trim() === normalized);
-    if (index === -1) return null;
 
-    db.users[index] = { ...db.users[index], ...updates };
-    writeDb(db);
-    return db.users[index];
+    if (process.env.MONGODB_URI) {
+      const database = await getDb();
+      const user = await database.collection('users').findOne({ email: normalized });
+      if (!user) return null;
+
+      await database.collection('users').updateOne({ email: normalized }, { $set: updates });
+      return await database.collection('users').findOne({ email: normalized });
+    } else {
+      const dbData = await readDb();
+      const index = dbData.users.findIndex(u => u.email.toLowerCase().trim() === normalized);
+      if (index === -1) return null;
+
+      dbData.users[index] = { ...dbData.users[index], ...updates };
+      await writeDb(dbData);
+      return dbData.users[index];
+    }
   },
 
-  getOtps() {
-    return readDb().otps;
+  async getOtps() {
+    if (process.env.MONGODB_URI) {
+      const database = await getDb();
+      return await database.collection('otps').find({}).toArray();
+    } else {
+      const dbData = await readDb();
+      return dbData.otps;
+    }
   },
 
-  getOtp(email, type) {
+  async getOtp(email, type) {
+    if (!email) return null;
     const normalized = email.toLowerCase().trim();
-    return this.getOtps().find(o => o.email.toLowerCase().trim() === normalized && o.type === type) || null;
+    if (process.env.MONGODB_URI) {
+      const database = await getDb();
+      return await database.collection('otps').findOne({ email: normalized, type });
+    } else {
+      const otps = await this.getOtps();
+      return otps.find(o => o.email.toLowerCase().trim() === normalized && o.type === type) || null;
+    }
   },
 
-  saveOtp(email, code, expiresAt, cooldownUntil, type) {
-    const db = readDb();
+  async saveOtp(email, code, expiresAt, cooldownUntil, type) {
+    if (!email) return null;
     const normalized = email.toLowerCase().trim();
-    
-    // Remove existing OTP of this type
-    db.otps = db.otps.filter(o => !(o.email.toLowerCase().trim() === normalized && o.type === type));
-
     const newOtp = {
       email: normalized,
       code,
@@ -107,16 +167,34 @@ const dbService = {
       type
     };
 
-    db.otps.push(newOtp);
-    writeDb(db);
-    return newOtp;
+    if (process.env.MONGODB_URI) {
+      const database = await getDb();
+      // Remove existing OTP of this type
+      await database.collection('otps').deleteMany({ email: normalized, type });
+      await database.collection('otps').insertOne(newOtp);
+      return newOtp;
+    } else {
+      const dbData = await readDb();
+      // Remove existing OTP of this type
+      dbData.otps = dbData.otps.filter(o => !(o.email.toLowerCase().trim() === normalized && o.type === type));
+      dbData.otps.push(newOtp);
+      await writeDb(dbData);
+      return newOtp;
+    }
   },
 
-  deleteOtp(email, type) {
-    const db = readDb();
+  async deleteOtp(email, type) {
+    if (!email) return;
     const normalized = email.toLowerCase().trim();
-    db.otps = db.otps.filter(o => !(o.email.toLowerCase().trim() === normalized && o.type === type));
-    writeDb(db);
+
+    if (process.env.MONGODB_URI) {
+      const database = await getDb();
+      await database.collection('otps').deleteMany({ email: normalized, type });
+    } else {
+      const dbData = await readDb();
+      dbData.otps = dbData.otps.filter(o => !(o.email.toLowerCase().trim() === normalized && o.type === type));
+      await writeDb(dbData);
+    }
   }
 };
 

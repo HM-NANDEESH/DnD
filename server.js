@@ -56,6 +56,10 @@ app.use((error, req, res, next) => {
   });
 });
 
-app.listen(env.port, '0.0.0.0', () => {
-  console.log(`DnD app listening on ${env.appUrl}`);
-});
+if (require.main === module) {
+  app.listen(env.port, '0.0.0.0', () => {
+    console.log(`DnD app listening on ${env.appUrl}`);
+  });
+}
+
+module.exports = app;

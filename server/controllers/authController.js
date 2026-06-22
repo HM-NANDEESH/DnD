@@ -53,13 +53,13 @@ const authController = {
         return res.status(400).json({ error: { message: 'Passwords do not match.' } });
       }
 
-      const existingUser = dbService.getUserByEmail(email);
+      const existingUser = await dbService.getUserByEmail(email);
       if (existingUser) {
         if (existingUser.status === 'verified') {
           return res.status(400).json({ error: { message: 'Email already registered.' } });
         }
         const passwordHash = await bcrypt.hash(password, 10);
-        dbService.updateUser(email, { 
+        await dbService.updateUser(email, { 
           name: name.trim(), 
           passwordHash, 
           status: 'verified',
@@ -69,7 +69,7 @@ const authController = {
         });
       } else {
         const passwordHash = await bcrypt.hash(password, 10);
-        dbService.createUser({ 
+        await dbService.createUser({ 
           name, 
           email, 
           passwordHash, 
@@ -80,7 +80,7 @@ const authController = {
         });
       }
 
-      const createdUser = dbService.getUserByEmail(email);
+      const createdUser = await dbService.getUserByEmail(email);
       const accessToken = generateAccessToken(createdUser.email);
       const refreshToken = generateRefreshToken(createdUser.email, false);
 
@@ -109,14 +109,14 @@ const authController = {
         return res.status(400).json({ error: { message: 'Email, code, and type are required.' } });
       }
 
-      const activeOtp = dbService.getOtp(email, type);
+      const activeOtp = await dbService.getOtp(email, type);
       if (!activeOtp) {
         return res.status(400).json({ error: { message: 'No active OTP found for this request.' } });
       }
 
       const now = new Date();
       if (now > new Date(activeOtp.expiresAt)) {
-        dbService.deleteOtp(email, type);
+        await dbService.deleteOtp(email, type);
         return res.status(400).json({ error: { message: 'OTP has expired. Please request a new one.' } });
       }
 
@@ -124,10 +124,10 @@ const authController = {
         return res.status(400).json({ error: { message: 'Incorrect OTP code.' } });
       }
 
-      dbService.deleteOtp(email, type);
+      await dbService.deleteOtp(email, type);
 
       if (type === 'signup') {
-        const user = dbService.updateUser(email, { status: 'verified' });
+        const user = await dbService.updateUser(email, { status: 'verified' });
         
         // Issue tokens
         const accessToken = generateAccessToken(user.email);
@@ -169,7 +169,7 @@ const authController = {
         return res.status(400).json({ error: { message: 'Email and type are required.' } });
       }
 
-      const user = dbService.getUserByEmail(email);
+      const user = await dbService.getUserByEmail(email);
       if (!user) {
         return res.status(404).json({ error: { message: 'User not found.' } });
       }
@@ -179,7 +179,7 @@ const authController = {
       }
 
       // Check cooldown
-      const existingOtp = dbService.getOtp(email, type);
+      const existingOtp = await dbService.getOtp(email, type);
       if (existingOtp) {
         const now = new Date();
         const cooldownDate = new Date(existingOtp.cooldownUntil);
@@ -197,7 +197,7 @@ const authController = {
       const expiresAt = new Date(now.getTime() + env.otpExpiresMinutes * 60 * 1000);
       const cooldownUntil = new Date(now.getTime() + env.otpCooldownSeconds * 1000);
 
-      dbService.saveOtp(email, otpCode, expiresAt, cooldownUntil, type);
+      await dbService.saveOtp(email, otpCode, expiresAt, cooldownUntil, type);
 
       // Send email
       await emailService.sendOtpEmail(email, otpCode, user.name);
@@ -220,7 +220,7 @@ const authController = {
         return res.status(400).json({ error: { message: 'Email and password are required.' } });
       }
 
-      const user = dbService.getUserByEmail(email);
+      const user = await dbService.getUserByEmail(email);
       if (!user) {
         return res.status(401).json({ error: { message: 'Invalid email or password.' } });
       }
@@ -231,7 +231,7 @@ const authController = {
       }
 
       if (user.status === 'unverified') {
-        dbService.updateUser(email, { status: 'verified' });
+        await dbService.updateUser(email, { status: 'verified' });
       }
 
       // Generate tokens
@@ -280,7 +280,7 @@ const authController = {
 
       try {
         const payload = jwt.verify(token, env.jwtRefreshSecret);
-        const user = dbService.getUserByEmail(payload.email);
+        const user = await dbService.getUserByEmail(payload.email);
         if (!user) {
           return res.status(401).json({ error: { message: 'Invalid refresh token.' } });
         }
@@ -316,18 +316,18 @@ const authController = {
         return res.status(400).json({ error: { message: 'Email is required.' } });
       }
 
-      const user = dbService.getUserByEmail(email);
+      const user = await dbService.getUserByEmail(email);
       
       // Generate a secure, random token (32 bytes hex)
       const token = crypto.randomBytes(32).toString('hex');
       const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 minutes
-
+      
       let resetLinkVal = undefined;
-
+      
       if (user) {
         // Store hashed token and expiration in the user record
-        dbService.updateUser(email, {
+        await dbService.updateUser(email, {
           passwordResetToken: hashedToken,
           passwordResetExpires: expiresAt
         });
@@ -397,7 +397,7 @@ const authController = {
         return res.status(400).json({ error: { message: 'Passwords do not match.' } });
       }
 
-      const user = dbService.getUserByEmail(email);
+      const user = await dbService.getUserByEmail(email);
       if (!user) {
         return res.status(400).json({ error: { message: 'Invalid user account.' } });
       }
@@ -408,7 +408,7 @@ const authController = {
 
       const now = new Date();
       if (now > new Date(user.passwordResetExpires)) {
-        dbService.updateUser(email, { passwordResetToken: null, passwordResetExpires: null });
+        await dbService.updateUser(email, { passwordResetToken: null, passwordResetExpires: null });
         return res.status(400).json({ error: { message: 'Password reset link has expired.' } });
       }
 
@@ -420,7 +420,7 @@ const authController = {
       const passwordHash = await bcrypt.hash(newPassword, 10);
       
       // Update password and clear password recovery token details
-      dbService.updateUser(email, {
+      await dbService.updateUser(email, {
         passwordHash,
         passwordResetToken: null,
         passwordResetExpires: null
@@ -446,7 +446,7 @@ const authController = {
         return res.status(400).json({ error: { message: 'Invalid email format.' } });
       }
 
-      let user = dbService.getUserByEmail(email);
+      let user = await dbService.getUserByEmail(email);
       const isLoginFlow = (req.body.flow === 'login' || req.body.isLogin === true);
       
       if (!user) {
@@ -461,17 +461,17 @@ const authController = {
         // Create a new verified SSO user
         const dummyPassword = Math.random().toString(36) + Math.random().toString(36);
         const passwordHash = await bcrypt.hash(dummyPassword, 10);
-        user = dbService.createUser({
+        user = await dbService.createUser({
           name: name ? name.trim() : email.split('@')[0],
           email: email.toLowerCase().trim(),
           passwordHash,
           status: 'verified'
         });
         // Save SSO provider info
-        dbService.updateUser(email, { ssoProvider: provider });
+        await dbService.updateUser(email, { ssoProvider: provider });
       } else if (user.status !== 'verified') {
         // Auto-verify existing unverified profile on SSO sign in
-        user = dbService.updateUser(email, { status: 'verified', ssoProvider: provider });
+        user = await dbService.updateUser(email, { status: 'verified', ssoProvider: provider });
       }
 
       const accessToken = generateAccessToken(user.email);
@@ -505,7 +505,7 @@ const authController = {
       const phone = (countryCode.trim() + phoneNumber.trim()).replace(/[\s\-()]/g, '');
 
       // Check cooldown
-      const existingOtp = dbService.getOtp(phone, 'phone');
+      const existingOtp = await dbService.getOtp(phone, 'phone');
       if (existingOtp) {
         const now = new Date();
         const cooldownDate = new Date(existingOtp.cooldownUntil);
@@ -523,7 +523,7 @@ const authController = {
       const expiresAt = new Date(now.getTime() + env.otpExpiresMinutes * 60 * 1000);
       const cooldownUntil = new Date(now.getTime() + env.otpCooldownSeconds * 1000);
 
-      dbService.saveOtp(phone, otpCode, expiresAt, cooldownUntil, 'phone');
+      await dbService.saveOtp(phone, otpCode, expiresAt, cooldownUntil, 'phone');
 
       const smsResult = await smsService.sendOtpSms(phone, otpCode);
 
@@ -549,14 +549,14 @@ const authController = {
 
       const phone = (countryCode.trim() + phoneNumber.trim()).replace(/[\s\-()]/g, '');
 
-      const activeOtp = dbService.getOtp(phone, 'phone');
+      const activeOtp = await dbService.getOtp(phone, 'phone');
       if (!activeOtp) {
         return res.status(400).json({ error: { message: 'No active OTP verification session found.' } });
       }
 
       const now = new Date();
       if (now > new Date(activeOtp.expiresAt)) {
-        dbService.deleteOtp(phone, 'phone');
+        await dbService.deleteOtp(phone, 'phone');
         return res.status(400).json({ error: { message: 'OTP has expired. Please request a new one.' } });
       }
 
@@ -564,13 +564,13 @@ const authController = {
         return res.status(400).json({ error: { message: 'Incorrect OTP code.' } });
       }
 
-      dbService.deleteOtp(phone, 'phone');
+      await dbService.deleteOtp(phone, 'phone');
 
       // Generate verified session token
       const phoneVerificationToken = jwt.sign({ phone, verified: true }, env.jwtAccessSecret, { expiresIn: '10m' });
 
       // Check if user already exists with this phone number
-      const users = dbService.getUsers();
+      const users = await dbService.getUsers();
       const existingUser = users.find(u => u.phoneNumber === phone);
       const isLoginFlow = (req.body.isLogin === true || req.body.flow === 'login');
 
@@ -644,18 +644,18 @@ const authController = {
       }
 
       // Check if user already exists
-      const existingUser = dbService.getUserByEmail(email);
+      const existingUser = await dbService.getUserByEmail(email);
       if (existingUser) {
         return res.status(400).json({ error: { message: 'Email already registered.' } });
       }
 
-      const existingPhoneUser = dbService.getUsers().find(u => u.phoneNumber === phone);
+      const existingPhoneUser = (await dbService.getUsers()).find(u => u.phoneNumber === phone);
       if (existingPhoneUser) {
         return res.status(400).json({ error: { message: 'Phone number already registered.' } });
       }
 
       const passwordHash = await bcrypt.hash(password, 10);
-      const user = dbService.createUser({
+      const user = await dbService.createUser({
         name,
         email,
         passwordHash,
@@ -665,7 +665,7 @@ const authController = {
       });
 
       // Update phone field
-      dbService.updateUser(email, { phoneNumber: phone });
+      await dbService.updateUser(email, { phoneNumber: phone });
 
       const accessToken = generateAccessToken(user.email);
       const refreshToken = generateRefreshToken(user.email, true);
@@ -708,7 +708,7 @@ const authController = {
         return res.status(400).json({ error: { message: 'Invalid verification token.' } });
       }
 
-      const existingUser = dbService.getUsers().find(u => u.phoneNumber === phone);
+      const existingUser = (await dbService.getUsers()).find(u => u.phoneNumber === phone);
       if (!existingUser) {
         return res.status(404).json({ error: { message: 'No account registered with this phone number.' } });
       }
@@ -739,7 +739,7 @@ const authController = {
       if (!email) {
         return res.status(400).json({ error: { message: 'Email is required.' } });
       }
-      const existingUser = dbService.getUserByEmail(email);
+      const existingUser = await dbService.getUserByEmail(email);
       if (existingUser && existingUser.status === 'verified') {
         return res.json({ exists: true, message: 'Email already registered.' });
       }
@@ -755,7 +755,7 @@ const authController = {
       if (!email) {
         return res.status(400).json({ error: { message: 'Email is required.' } });
       }
-      const user = dbService.getUserByEmail(email);
+      const user = await dbService.getUserByEmail(email);
       if (!user || user.status !== 'verified') {
         return res.status(404).json({ error: { message: 'Account not found.' } });
       }
@@ -802,7 +802,7 @@ const authController = {
       }
 
       // Check if user exists by phone number
-      const users = dbService.getUsers();
+      const users = await dbService.getUsers();
       const user = users.find(u => u.phoneNumber && u.phoneNumber.replace(/[\s\-()]/g, '') === phone.replace(/[\s\-()]/g, ''));
 
       if (user) {
