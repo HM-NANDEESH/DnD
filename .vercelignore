@@ -1,8 +1,0 @@
-# Ignore raw large wallpapers
-*.png
-!icon.png
-
-# Ignore local config/temp files
-.git/
-.gitignore
-*.stackdump

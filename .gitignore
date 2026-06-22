@@ -16,5 +16,18 @@ Thumbs.db
 *.njsproj
 *.sln
 *.swp
+# Local server auth state
+server/data/*.json
+server/data/*.tmp
 
-.vercel
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies & Build Output
+node_modules/
+www/
+
+# Scratch & temp files
+scratch/

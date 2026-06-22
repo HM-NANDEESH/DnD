@@ -64,7 +64,7 @@ function createMockImage(theme, iconSymbol) {
   return canvas.toDataURL('image/png');
 }
 
-export async function setupDemoDataIfEmpty(db) {
+async function setupDemoDataIfEmpty(db) {
   const habits = await db.getHabits(true);
   if (habits.length > 0) {
     // Already populated, skip
@@ -249,7 +249,7 @@ export async function setupDemoDataIfEmpty(db) {
   await db.setSetting('unlocked_achievements', achievements);
 }
 
-export async function injectAdditionalRandomHabits(db) {
+async function injectAdditionalRandomHabits(db) {
   const isDone = await db.getSetting('extra_habits_inserted', false);
   if (isDone) return;
 

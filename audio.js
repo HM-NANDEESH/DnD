@@ -2,7 +2,7 @@
  * audio.js - Synthesized game-like positive sound effects using Web Audio API
  */
 
-export class TickOffAudio {
+class TickOffAudio {
   constructor() {
     this.audioCtx = null;
     this.isMuted = false;

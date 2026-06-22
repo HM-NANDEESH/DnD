@@ -5,9 +5,11 @@
 const DB_NAME = 'DnDDB';
 const DB_VERSION = 2;
 
-export class TickOffDB {
+class TickOffDB {
   constructor() {
     this.db = null;
+    this.settingsCache = {};
+    this.streakCache = {};
   }
 
   init() {
@@ -55,13 +57,19 @@ export class TickOffDB {
 
   // --- CRUD for Settings ---
   getSetting(key, defaultValue = null) {
+    if (this.settingsCache && this.settingsCache[key] !== undefined) {
+      return Promise.resolve(this.settingsCache[key]);
+    }
     return new Promise((resolve) => {
       const transaction = this.db.transaction(['settings'], 'readonly');
       const store = transaction.objectStore('settings');
       const request = store.get(key);
 
       request.onsuccess = () => {
-        resolve(request.result ? request.result.value : defaultValue);
+        const val = request.result ? request.result.value : defaultValue;
+        if (!this.settingsCache) this.settingsCache = {};
+        this.settingsCache[key] = val;
+        resolve(val);
       };
       request.onerror = () => {
         resolve(defaultValue);
@@ -70,6 +78,8 @@ export class TickOffDB {
   }
 
   setSetting(key, value) {
+    if (!this.settingsCache) this.settingsCache = {};
+    this.settingsCache[key] = value;
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['settings'], 'readwrite');
       const store = transaction.objectStore('settings');
@@ -82,6 +92,7 @@ export class TickOffDB {
 
   // --- CRUD for Habits ---
   addHabit(habit) {
+    this.clearStreakCache();
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['habits'], 'readwrite');
       const store = transaction.objectStore('habits');
@@ -111,6 +122,7 @@ export class TickOffDB {
   }
 
   updateHabit(habit) {
+    this.clearStreakCache(habit.id);
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['habits'], 'readwrite');
       const store = transaction.objectStore('habits');
@@ -122,6 +134,7 @@ export class TickOffDB {
   }
 
   deleteHabit(id) {
+    this.clearStreakCache(id);
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['habits', 'completions'], 'readwrite');
       const habitStore = transaction.objectStore('habits');
@@ -181,6 +194,7 @@ export class TickOffDB {
 
   // --- CRUD for Completions & Journals ---
   toggleCompletion(habitId, dateStr, subTasksChecked = null, journalNote = null, journalPhoto = null) {
+    this.clearStreakCache(habitId);
     return new Promise((resolve, reject) => {
       const key = `${habitId}_${dateStr}`;
       const transaction = this.db.transaction(['completions'], 'readwrite');
@@ -273,12 +287,26 @@ export class TickOffDB {
     });
   }
 
+  clearStreakCache(habitId = null) {
+    if (!this.streakCache) return;
+    if (habitId) {
+      delete this.streakCache[habitId];
+    } else {
+      this.streakCache = {};
+    }
+  }
+
   // --- Analytical Calculations ---
 
   /**
    * Calculate streaks (Current streak, Longest streak, and Completion dates list)
    */
   async getStreakStats(habitId, completions = null) {
+    if (!this.streakCache) this.streakCache = {};
+    if (completions === null && this.streakCache[habitId] !== undefined) {
+      return this.streakCache[habitId];
+    }
+
     if (!completions) {
       completions = await this.getCompletionsForHabit(habitId);
     }
@@ -290,7 +318,9 @@ export class TickOffDB {
       .sort((a, b) => new Date(a) - new Date(b));
     
     if (completedDates.length === 0) {
-      return { currentStreak: 0, longestStreak: 0, lastCompleted: null };
+      const stats = { currentStreak: 0, longestStreak: 0, lastCompleted: null };
+      this.streakCache[habitId] = stats;
+      return stats;
     }
 
     let currentStreak = 0;
@@ -343,11 +373,13 @@ export class TickOffDB {
       currentStreak = 0; // streak broken as of today
     }
 
-    return {
+    const stats = {
       currentStreak,
       longestStreak,
       lastCompleted: completedDates[completedDates.length - 1]
     };
+    this.streakCache[habitId] = stats;
+    return stats;
   }
 
   /**

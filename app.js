@@ -2,9 +2,9 @@
  * app.js - Master SPA Controller for DnD Habit Tracker & Life Journal
  */
 
-import { TickOffDB } from './db.js';
-import { TickOffAudio } from './audio.js';
-import { setupDemoDataIfEmpty, injectAdditionalRandomHabits } from './demo.js';
+// import { TickOffDB } from './db.js';
+// import { TickOffAudio } from './audio.js';
+// import { setupDemoDataIfEmpty, injectAdditionalRandomHabits } from './demo.js';
 
 // --- Multi-language Translations Dictionary ---
 const TRANSLATIONS = {
@@ -100,6 +100,7 @@ const TRANSLATIONS = {
     btn_add_task: "Add Task",
     btn_delete: "Delete",
     btn_cancel: "Cancel",
+    btn_okay: "Okay",
     btn_save_habit: "Save Habit",
     lbl_journal_log: "Journey Log & Photo Journal",
     lbl_journal_note: "Reflection / Progress Notes",
@@ -111,7 +112,13 @@ const TRANSLATIONS = {
     lbl_subtask_progress: "Sub-task Progress",
     chart_circadian_title: "Circadian Completion Scatter",
     set_notif_title: "Push Notifications",
-    set_notif_desc: "Receive browser smart reminders for daily pending habits."
+    set_notif_desc: "Receive browser smart reminders for daily pending habits.",
+    set_install_title: "Install Mobile App",
+    set_install_desc: "Add DnD to your home screen for offline access and a full-screen app experience.",
+    btn_install_app: "Install App",
+    pwa_banner_title: "Install DnD App",
+    pwa_banner_desc: "Add to home screen for offline habits & streaks",
+    pwa_ios_title: "Install on iPhone / iPad"
   },
   hi: {
     nav_dashboard: "डैशबोर्ड",
@@ -205,6 +212,7 @@ const TRANSLATIONS = {
     btn_add_task: "कार्य जोड़ें",
     btn_delete: "हटाएं",
     btn_cancel: "रद्द करें",
+    btn_okay: "ठीक है",
     btn_save_habit: "आदत सहेजें",
     lbl_journal_log: "यात्रा लॉग और फोटो जर्नल",
     lbl_journal_note: "प्रगति और आत्मनिरीक्षण नोट्स",
@@ -310,6 +318,7 @@ const TRANSLATIONS = {
     btn_add_task: "Agregar Tarea",
     btn_delete: "Eliminar",
     btn_cancel: "Cancelar",
+    btn_okay: "Aceptar",
     btn_save_habit: "Guardar Hábito",
     lbl_journal_log: "Log de Trayecto y Diario de Fotos",
     lbl_journal_note: "Notas de Progreso y Reflexión",
@@ -415,6 +424,7 @@ const TRANSLATIONS = {
     btn_add_task: "Aufgabe hinzufügen",
     btn_delete: "Löschen",
     btn_cancel: "Abbrechen",
+    btn_okay: "Okay",
     btn_save_habit: "Gewohnheit speichern",
     lbl_journal_log: "Fortschritts- und Fotojournal",
     lbl_journal_note: "Reflexionen / Fortschrittsnotizen",
@@ -520,6 +530,7 @@ const TRANSLATIONS = {
     btn_add_task: "追加",
     btn_delete: "削除",
     btn_cancel: "キャンセル",
+    btn_okay: "確定",
     btn_save_habit: "習慣を保存",
     lbl_journal_log: "日誌＆写真ジャーナルの記録",
     lbl_journal_note: "振り返り / 成長記録",
@@ -625,6 +636,7 @@ const TRANSLATIONS = {
     btn_add_task: "Добавить подзадачу",
     btn_delete: "Удалить",
     btn_cancel: "Отмена",
+    btn_okay: "ОК",
     btn_save_habit: "Сохранить привычку",
     lbl_journal_log: "Журнал прогресса и фотоотчетов",
     lbl_journal_note: "Размышления и отчеты о прогрессе",
@@ -722,6 +734,15 @@ const state = {
   notesVaultUnlocked: false,
   activeStyleSidebarCategory: null,
   selectedTheme: 'dark',
+  notifications: [],
+  notificationPreferences: {
+    notif_reminders: true,
+    notif_streaks: true,
+    notif_success: true,
+    notif_guidance: true,
+    notif_audio: true
+  },
+  onboardingState: null,
   currentLang: 'en',
   activeHabitsCategory: 'all',
   activeAgendaCategory: 'all',
@@ -818,9 +839,12 @@ async function initApp() {
 
   // 3. Load DB data to global state
   await reloadStateData();
+  await checkAuthStatus();
 
   // 4. Attach event listeners
   attachEventListeners();
+  initExitConfirmation();
+  initLocalAuth();
 
   // 5. Initialize notifications
   await initNotifications();
@@ -834,6 +858,21 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initApp);
 } else {
   initApp();
+}
+
+// Cancel scheduled native notifications for a specific habit
+async function cancelHabitNotifications(habitId) {
+  if (window.Capacitor?.Plugins?.LocalNotifications) {
+    try {
+      const id1 = parseInt(habitId);
+      const id2 = id1 + 100000;
+      await window.Capacitor.Plugins.LocalNotifications.cancel({
+        notifications: [{ id: id1 }, { id: id2 }]
+      });
+    } catch (e) {
+      console.error('Failed to cancel notifications for habit:', habitId, e);
+    }
+  }
 }
 
 // --- CORE UTILITY: Reload DB data to State ---
@@ -931,14 +970,1027 @@ async function reloadStateData() {
   if (habitsUpdated) {
     state.habits = await state.db.getHabits(true);
   }
+
+  // Cancel scheduled notifications for any habits completed today
+  const todayStr = new Date().toISOString().split('T')[0];
+  for (const h of state.habits) {
+    const completedToday = state.completions.some(c => c.habitId === h.id && c.completed && c.date === todayStr);
+    if (completedToday) {
+      cancelHabitNotifications(h.id);
+    }
+  }
   
+  // Load Notifications and preferences
+  state.notifications = await state.db.getSetting('notifications_list', []);
+  const savedPreferences = await state.db.getSetting('notification_preferences', null);
+  if (savedPreferences) {
+    state.notificationPreferences = { ...state.notificationPreferences, ...savedPreferences };
+  }
+  
+  // Load Onboarding State
+  const defaultOnboarding = {
+    create_habit: false,
+    complete_subtask: false,
+    write_journal: false,
+    complete_habit: false,
+    reward_claimed: false
+  };
+  state.onboardingState = await state.db.getSetting('onboarding_state', defaultOnboarding);
+
   // Dynamically update achievements on reload
   await checkAchievements();
+}
+
+function initExitConfirmation() {
+  const modal = document.getElementById('modal-exit-confirm');
+  const btnCancel = document.getElementById('btn-exit-cancel');
+  const btnConfirm = document.getElementById('btn-exit-confirm');
+
+  if (!modal) return;
+
+  const showExitModal = () => {
+    modal.classList.add('active');
+  };
+
+  const hideExitModal = () => {
+    modal.classList.remove('active');
+  };
+
+  if (btnCancel) {
+    btnCancel.addEventListener('click', hideExitModal);
+  }
+
+  if (btnConfirm) {
+    btnConfirm.addEventListener('click', () => {
+      hideExitModal();
+      if (window.Capacitor?.Plugins?.App) {
+        window.Capacitor.Plugins.App.exitApp();
+      } else if (navigator.app && typeof navigator.app.exitApp === 'function') {
+        navigator.app.exitApp();
+      } else {
+        window.close();
+      }
+    });
+  }
+
+  // Intercept native backbutton event (Android / Cordova)
+  document.addEventListener('backbutton', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Check if there are active modal overlays
+    const activeOverlays = Array.from(document.querySelectorAll('.modal-overlay.active'));
+    if (activeOverlays.length > 0) {
+      // Don't close account modal if locked out
+      const topModal = activeOverlays[activeOverlays.length - 1];
+      if (topModal.id === 'modal-account-auth') {
+        const titleText = document.getElementById('auth-modal-title')?.innerText || '';
+        if (titleText.includes('Sign In') || titleText.includes('Unlock')) {
+          showNotification('⚠️ Unlock profile to access DnD!', 'var(--color-rose)');
+          return;
+        }
+      }
+      topModal.classList.remove('active');
+    } else {
+      showExitModal();
+    }
+  }, false);
+
+  // Web beforeunload listener fallback
+  window.addEventListener('beforeunload', (e) => {
+    e.preventDefault();
+    e.returnValue = 'Are you sure you want to quit?';
+    return 'Are you sure you want to quit?';
+  });
+}
+
+// ================= LOCAL USER ACCOUNT SYSTEM =================
+// In-memory access token storage
+let accessToken = null;
+
+// Helper to make authenticated requests
+async function authFetch(url, options = {}) {
+  options.headers = options.headers || {};
+  if (accessToken) {
+    options.headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+  
+  let response = await fetch(url, options);
+  
+  // If unauthorized, attempt silent refresh
+  if (response.status === 401) {
+    const refreshed = await silentTokenRefresh();
+    if (refreshed) {
+      options.headers['Authorization'] = `Bearer ${accessToken}`;
+      response = await fetch(url, options);
+    }
+  }
+  return response;
+}
+
+async function silentTokenRefresh() {
+  if (window.DnDAndroid) return true; // Android container manages session natively
+  
+  try {
+    const res = await fetch('/api/auth/refresh-token', { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      accessToken = data.accessToken;
+      
+      const sidebarNameEl = document.querySelector('.profile-name');
+      const usernameDisplay = document.getElementById('settings-username-display');
+      const usernameDesc = document.getElementById('settings-username-desc');
+      const btnLogout = document.getElementById('btn-settings-account-logout');
+      
+      if (sidebarNameEl) sidebarNameEl.innerText = data.user.name;
+      if (usernameDisplay) usernameDisplay.innerText = `Profile: ${data.user.name}`;
+      if (usernameDesc) usernameDesc.innerText = `Logged in via Web Account (${data.user.email})`;
+      if (btnLogout) btnLogout.style.display = 'inline-block';
+      
+      // Hide auth overlay if visible
+      const overlay = document.getElementById('web-auth-overlay');
+      if (overlay) overlay.style.display = 'none';
+      return true;
+    }
+  } catch (err) {
+    console.error('Silent token refresh failed:', err);
+  }
+  
+  accessToken = null;
+  return false;
+}
+
+async function checkAuthStatus() {
+  const sidebarNameEl = document.querySelector('.profile-name');
+  const btnLogout = document.getElementById('btn-settings-account-logout');
+  const usernameDisplay = document.getElementById('settings-username-display');
+  const usernameDesc = document.getElementById('settings-username-desc');
+
+  if (window.DnDAndroid && typeof window.DnDAndroid.isLoggedIn === 'function') {
+    const isLoggedIn = window.DnDAndroid.isLoggedIn();
+    if (isLoggedIn) {
+      const username = window.DnDAndroid.getUsername() || 'Achiever';
+      if (sidebarNameEl) sidebarNameEl.innerText = username;
+      if (usernameDisplay) usernameDisplay.innerText = `Profile: ${username}`;
+      if (usernameDesc) usernameDesc.innerText = 'Logged in via Android native account.';
+      if (btnLogout) btnLogout.style.display = 'inline-block';
+    } else {
+      if (sidebarNameEl) sidebarNameEl.innerText = 'Guest Profile';
+      if (usernameDisplay) usernameDisplay.innerText = 'Guest Profile';
+      if (usernameDesc) usernameDesc.innerText = 'Offline guest account mode.';
+      if (btnLogout) btnLogout.style.display = 'none';
+    }
+  } else {
+    // Web Mode
+    const refreshed = await silentTokenRefresh();
+    if (!refreshed) {
+      showWebAuthOverlay('welcome');
+    }
+  }
+}
+
+function showWebAuthOverlay(view) {
+  const overlay = document.getElementById('web-auth-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  
+  // Hide all forms and views
+  const welcomeView = document.getElementById('web-auth-welcome-view');
+  if (welcomeView) welcomeView.style.display = 'none';
+  
+  const backToWelcomeBtn = document.getElementById('btn-auth-back-to-welcome');
+  if (backToWelcomeBtn) {
+    if (view === 'welcome') {
+      backToWelcomeBtn.style.display = 'none';
+    } else {
+      backToWelcomeBtn.style.display = 'block';
+    }
+  }
+
+  const logoHeader = document.querySelector('.auth-logo-header');
+  if (logoHeader) {
+    if (view === 'welcome') {
+      logoHeader.style.display = 'none';
+    } else {
+      logoHeader.style.display = 'block';
+    }
+  }
+
+  document.getElementById('web-auth-login-form').style.display = 'none';
+  document.getElementById('web-auth-signup-form').style.display = 'none';
+  document.getElementById('web-auth-otp-form').style.display = 'none';
+  document.getElementById('web-auth-forgot-form').style.display = 'none';
+  document.getElementById('web-auth-reset-form').style.display = 'none';
+  const phoneForm = document.getElementById('web-auth-phone-form');
+  if (phoneForm) phoneForm.style.display = 'none';
+  
+  const title = document.getElementById('web-auth-title');
+  const feedback = document.getElementById('web-auth-global-feedback');
+  if (feedback) feedback.hidden = true;
+  
+  if (view === 'welcome') {
+    if (welcomeView) welcomeView.style.display = 'flex';
+  } else if (view === 'login') {
+    title.innerText = 'Log in to DnD';
+    document.getElementById('web-auth-login-form').style.display = 'block';
+  } else if (view === 'signup') {
+    title.innerText = 'Sign up for DnD';
+    document.getElementById('web-auth-signup-form').style.display = 'block';
+    
+    // Reset wizard to Step 1
+    document.getElementById('web-signup-step-1').style.display = 'block';
+    document.getElementById('web-signup-step-2').style.display = 'none';
+    document.getElementById('web-signup-step-3').style.display = 'none';
+    document.getElementById('web-signup-step-4').style.display = 'none';
+  } else if (view === 'otp') {
+    title.innerText = 'Verify Code';
+    document.getElementById('web-auth-otp-form').style.display = 'block';
+  } else if (view === 'forgot') {
+    title.innerText = 'Reset Password';
+    document.getElementById('web-auth-forgot-form').style.display = 'block';
+  } else if (view === 'reset') {
+    title.innerText = 'Choose New Password';
+    document.getElementById('web-auth-reset-form').style.display = 'block';
+  } else if (view === 'phone') {
+    title.innerText = 'Verify Phone';
+    if (phoneForm) phoneForm.style.display = 'block';
+  }
+}
+
+function initLocalAuth() {
+  const btnSettingsLogout = document.getElementById('btn-settings-account-logout');
+  if (btnSettingsLogout) {
+    btnSettingsLogout.addEventListener('click', async () => {
+      if (window.DnDAndroid && typeof window.DnDAndroid.logout === 'function') {
+        window.DnDAndroid.logout();
+      } else {
+        // Web logout
+        await fetch('/api/auth/logout', { method: 'POST' });
+        accessToken = null;
+        checkAuthStatus();
+      }
+    });
+  }
+
+  if (window.DnDAndroid) return; // Remaining listeners are for Web Auth Overlay
+
+  const feedback = document.getElementById('web-auth-global-feedback');
+  const showFeedback = (msg, isError = true) => {
+    if (!feedback) return;
+    feedback.innerText = msg;
+    feedback.style.background = isError ? 'rgba(244, 63, 94, 0.15)' : 'rgba(16, 185, 129, 0.15)';
+    feedback.style.color = isError ? '#f43f5e' : '#10b981';
+    feedback.hidden = false;
+  };
+
+  // Cooldown timer logic
+  let otpEmail = '';
+  let otpType = 'signup';
+  let verificationToken = ''; // Set after recovery verification
+  let webFailedLoginAttempts = 0;
+  let resetEmail = '';
+  let resetToken = '';
+  let phoneVerificationToken = ''; // Set after phone OTP verification
+  let selectedCountryCode = '';
+  let selectedPhoneNumber = '';
+  let cooldownTimer = null;
+
+  const startCooldown = (seconds) => {
+    const btnResend = document.getElementById('btn-web-resend-otp');
+    const txtCooldown = document.getElementById('web-otp-cooldown-text');
+    if (!btnResend || !txtCooldown) return;
+    
+    btnResend.style.display = 'none';
+    txtCooldown.style.display = 'block';
+    txtCooldown.innerText = `Resend available in ${seconds}s`;
+    
+    if (cooldownTimer) clearInterval(cooldownTimer);
+    let remaining = seconds;
+    cooldownTimer = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(cooldownTimer);
+        btnResend.style.display = 'block';
+        txtCooldown.style.display = 'none';
+      } else {
+        txtCooldown.innerText = `Resend available in ${remaining}s`;
+      }
+    }, 1000);
+  };
+
+  // WebOTP API SMS Auto-fill listener
+  const startWebOtpListener = () => {
+    if ('OTPCredential' in window) {
+      if (window.activeOtpAbortController) {
+        window.activeOtpAbortController.abort();
+      }
+      const ac = new AbortController();
+      window.activeOtpAbortController = ac;
+      
+      navigator.credentials.get({
+        otp: { transport: ['sms'] },
+        signal: ac.signal
+      }).then(otp => {
+        const codeInput = document.getElementById('web-otp-code');
+        if (codeInput) {
+          codeInput.value = otp.code;
+          showFeedback('✓ SMS OTP Autofilled!', false);
+          // Auto-submit OTP verification
+          document.getElementById('web-auth-otp-form').dispatchEvent(new Event('submit'));
+        }
+      }).catch(err => {
+        console.log('WebOTP listener closed or aborted:', err);
+      });
+    }
+  };
+
+  // Password visibility toggles
+  const setupPassToggle = (btnId, inputId) => {
+    const btn = document.getElementById(btnId);
+    const input = document.getElementById(inputId);
+    if (btn && input) {
+      btn.addEventListener('click', () => {
+        const type = input.type === 'password' ? 'text' : 'password';
+        input.type = type;
+        btn.innerText = type === 'password' ? '👁️' : '🔒';
+      });
+    }
+  };
+  setupPassToggle('btn-toggle-web-login-pass', 'web-login-pass');
+  setupPassToggle('btn-toggle-web-signup-pass', 'web-signup-pass');
+  setupPassToggle('btn-toggle-web-reset-pass', 'web-reset-new-pass');
+
+  document.getElementById('btn-welcome-signup')?.addEventListener('click', () => {
+    showWebAuthOverlay('signup');
+  });
+  document.getElementById('btn-welcome-login')?.addEventListener('click', () => {
+    showWebAuthOverlay('login');
+  });
+  document.getElementById('btn-auth-back-to-welcome')?.addEventListener('click', () => {
+    showWebAuthOverlay('welcome');
+  });
+
+  // Dynamic Password strength checklist validation
+  const updatePasswordRules = () => {
+    const pass = document.getElementById('web-signup-pass').value;
+    const confirm = document.getElementById('web-signup-confirm-pass').value;
+    
+    const isMinLength = pass.length >= 8;
+    const hasUppercase = /[A-Z]/.test(pass);
+    const hasLowercase = /[a-z]/.test(pass);
+    const hasNumOrSpec = /[0-9!@#$%^&*(),.?":{}|<>]/.test(pass);
+    const isMatch = pass.length > 0 && pass === confirm;
+
+    const setRuleState = (id, isValid) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const statusEl = el.querySelector('.rule-status');
+      if (statusEl) {
+        statusEl.innerText = isValid ? '✓' : '✗';
+        statusEl.style.color = isValid ? '#10b981' : '#ef4444';
+      }
+      el.style.color = isValid ? '#e2e8f0' : '#94a3b8';
+    };
+
+    setRuleState('rule-length', isMinLength);
+    setRuleState('rule-letter', hasUppercase);
+    setRuleState('rule-lowercase', hasLowercase);
+    setRuleState('rule-number', hasNumOrSpec);
+    setRuleState('rule-match', isMatch);
+
+    const allValid = isMinLength && hasUppercase && hasLowercase && hasNumOrSpec && isMatch;
+    const nextBtn = document.getElementById('btn-web-signup-next-2');
+    if (nextBtn) nextBtn.disabled = !allValid;
+
+    return allValid;
+  };
+
+  document.getElementById('web-signup-pass')?.addEventListener('input', updatePasswordRules);
+  document.getElementById('web-signup-confirm-pass')?.addEventListener('input', updatePasswordRules);
+
+  // Progressive Wizard Steps Event Handlers
+  document.getElementById('btn-web-signup-next-1')?.addEventListener('click', async () => {
+    const email = document.getElementById('web-signup-email').value.trim();
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRe.test(email)) {
+      showFeedback('Please enter a valid email address.');
+      return;
+    }
+
+    const btn = document.getElementById('btn-web-signup-next-1');
+    if (btn) btn.disabled = true;
+
+    try {
+      const res = await fetch('/api/auth/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (res.status === 200) {
+        if (data.exists) {
+          // Display the custom "This email is already connected" screen instead of inline feedback
+          document.getElementById('web-auth-signup-form').style.display = 'none';
+          const logoHeader = document.querySelector('.auth-logo-header');
+          if (logoHeader) logoHeader.style.display = 'none';
+          document.getElementById('web-auth-email-exists-view').style.display = 'flex';
+        } else {
+          showFeedback('Email accepted. Create your password.', false);
+          document.getElementById('web-signup-step-1').style.display = 'none';
+          document.getElementById('web-signup-step-2').style.display = 'block';
+          updatePasswordRules(); // Initialize button state
+        }
+      } else {
+        showFeedback(data.error?.message || 'Error checking email.');
+      }
+    } catch (err) {
+      showFeedback('Connection error. Please try again.');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  // Action listeners for "Email Already Connected" screen
+  document.getElementById('btn-exists-close')?.addEventListener('click', () => {
+    document.getElementById('web-auth-email-exists-view').style.display = 'none';
+    document.getElementById('web-auth-signup-form').style.display = 'block';
+    const logoHeader = document.querySelector('.auth-logo-header');
+    if (logoHeader) logoHeader.style.display = 'block';
+  });
+
+  document.getElementById('btn-exists-goto-login')?.addEventListener('click', () => {
+    document.getElementById('web-auth-email-exists-view').style.display = 'none';
+    showWebAuthOverlay('login');
+  });
+
+  document.getElementById('btn-web-signup-next-2')?.addEventListener('click', () => {
+    const isValid = updatePasswordRules();
+    if (!isValid) {
+      showFeedback('Please satisfy all password strength requirements.');
+      return;
+    }
+    showFeedback('Password set. Please fill in your date of birth.', false);
+    document.getElementById('web-signup-step-2').style.display = 'none';
+    document.getElementById('web-signup-step-dob').style.display = 'block';
+  });
+
+  document.getElementById('btn-web-signup-next-dob')?.addEventListener('click', () => {
+    const day = document.getElementById('web-signup-dob-day').value.trim();
+    const month = document.getElementById('web-signup-dob-month').value;
+    const year = document.getElementById('web-signup-dob-year').value.trim();
+
+    if (!day || !month || !year) {
+      showFeedback('Please enter your complete date of birth.');
+      return;
+    }
+    const dVal = parseInt(day, 10);
+    const yVal = parseInt(year, 10);
+    const mVal = parseInt(month, 10);
+    if (dVal < 1 || dVal > 31 || yVal < 1900 || yVal > new Date().getFullYear()) {
+      showFeedback('Please enter a valid date of birth.');
+      return;
+    }
+    const dob = new Date(yVal, mVal - 1, dVal);
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const mDiff = today.getMonth() - dob.getMonth();
+    if (mDiff < 0 || (mDiff === 0 && today.getDate() < dob.getDate())) {
+      age--;
+    }
+    if (age < 13) {
+      showFeedback('You do not meet the age requirement to register (minimum 13 years old).');
+      return;
+    }
+
+    showFeedback('Date of birth set. Select your gender.', false);
+    document.getElementById('web-signup-step-dob').style.display = 'none';
+    document.getElementById('web-signup-step-gender').style.display = 'block';
+  });
+
+  document.getElementById('btn-web-signup-next-gender')?.addEventListener('click', () => {
+    const gender = document.getElementById('web-signup-gender').value;
+    if (!gender) {
+      showFeedback('Please select your gender.');
+      return;
+    }
+    showFeedback('Gender set. What should we call you?', false);
+    document.getElementById('web-signup-step-gender').style.display = 'none';
+    document.getElementById('web-signup-step-name').style.display = 'block';
+  });
+
+  document.getElementById('btn-web-signup-submit')?.addEventListener('click', async () => {
+    const name = document.getElementById('web-signup-name-input').value.trim();
+    if (!name) {
+      showFeedback('Please enter your full name.');
+      return;
+    }
+
+    const email = document.getElementById('web-signup-email').value.trim();
+    const password = document.getElementById('web-signup-pass').value;
+    const confirmPassword = document.getElementById('web-signup-confirm-pass').value;
+    const day = document.getElementById('web-signup-dob-day').value.trim();
+    const month = document.getElementById('web-signup-dob-month').value;
+    const year = document.getElementById('web-signup-dob-year').value.trim();
+    const gender = document.getElementById('web-signup-gender').value;
+    const dobString = `${year}-${month}-${day.padStart(2, '0')}`;
+
+    const btn = document.getElementById('btn-web-signup-submit');
+    if (btn) btn.disabled = true;
+
+    if (phoneVerificationToken) {
+      // Phone registration flow
+      showFeedback('Completing phone registration...', false);
+      try {
+        const res = await fetch('/api/auth/phone-register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            countryCode: selectedCountryCode,
+            phoneNumber: selectedPhoneNumber,
+            phoneVerificationToken,
+            name,
+            email,
+            password,
+            confirmPassword
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          accessToken = data.accessToken;
+          phoneVerificationToken = ''; // Reset
+          showFeedback('✓ Account registered successfully!', false);
+          setTimeout(() => {
+            checkAuthStatus();
+          }, 800);
+        } else {
+          showFeedback(data.error.message || 'Registration failed.');
+        }
+      } catch (err) {
+        showFeedback('Unable to connect to server.');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    } else {
+      // Email standard progressive signup flow
+      showFeedback('Creating account...', false);
+      try {
+        const res = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, password, confirmPassword, dob: dobString, gender })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          accessToken = data.accessToken;
+          // Hide all signup steps and show success view
+          document.getElementById('web-signup-step-name').style.display = 'none';
+          document.getElementById('web-signup-success-view').style.display = 'block';
+          const signupFooter = document.querySelector('#web-auth-signup-form .auth-footer');
+          if (signupFooter) signupFooter.style.display = 'none';
+          const logoHeader = document.querySelector('.auth-logo-header');
+          if (logoHeader) logoHeader.style.display = 'none';
+          
+          showFeedback('✓ Account created successfully!', false);
+          setTimeout(() => {
+            // Restore UI header state for future overlay triggers
+            if (signupFooter) signupFooter.style.display = 'block';
+            if (logoHeader) logoHeader.style.display = 'block';
+            document.getElementById('web-signup-success-view').style.display = 'none';
+            document.getElementById('web-signup-step-1').style.display = 'block';
+            document.getElementById('web-signup-name-input').value = '';
+            document.getElementById('web-signup-email').value = '';
+            document.getElementById('web-signup-pass').value = '';
+            document.getElementById('web-signup-confirm-pass').value = '';
+            
+            checkAuthStatus();
+          }, 2000);
+        } else {
+          showFeedback(data.error.message || 'Signup failed.');
+        }
+      } catch (err) {
+        showFeedback('Unable to connect to the server.');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+  });
+
+  // Wizard Back Buttons
+  document.getElementById('btn-web-signup-back-2')?.addEventListener('click', () => {
+    document.getElementById('web-signup-step-2').style.display = 'none';
+    document.getElementById('web-signup-step-1').style.display = 'block';
+  });
+
+  document.getElementById('btn-web-signup-back-dob')?.addEventListener('click', () => {
+    document.getElementById('web-signup-step-dob').style.display = 'none';
+    document.getElementById('web-signup-step-2').style.display = 'block';
+  });
+
+  document.getElementById('btn-web-signup-back-gender')?.addEventListener('click', () => {
+    document.getElementById('web-signup-step-gender').style.display = 'none';
+    document.getElementById('web-signup-step-dob').style.display = 'block';
+  });
+
+  document.getElementById('btn-web-signup-back-name')?.addEventListener('click', () => {
+    document.getElementById('web-signup-step-name').style.display = 'none';
+    document.getElementById('web-signup-step-gender').style.display = 'block';
+  });
+
+  // Navigation Links
+  const setupNav = (id, view) => {
+    document.getElementById(id)?.addEventListener('click', (e) => {
+      e.preventDefault();
+      // Clear token state if switching views
+      if (view === 'login' || view === 'signup') {
+        phoneVerificationToken = '';
+      }
+      showWebAuthOverlay(view);
+    });
+  };
+  setupNav('link-web-goto-signup', 'signup');
+  setupNav('link-web-goto-login', 'login');
+  setupNav('link-web-goto-login-signup', 'login');
+  setupNav('link-web-forgot-pass', 'forgot');
+  setupNav('link-web-otp-back', 'login');
+  setupNav('link-web-forgot-back', 'login');
+  setupNav('link-web-reset-back', 'login');
+  setupNav('link-web-phone-back', 'login');
+
+  // SSO Action Bindings
+  const handleSsoClick = async (provider) => {
+    const email = prompt(`Enter your ${provider} email to connect:`);
+    if (!email) return;
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRe.test(email)) {
+      showFeedback('Invalid email format.');
+      return;
+    }
+
+    showFeedback(`Connecting to ${provider}...`, false);
+    try {
+      const res = await fetch('/api/auth/sso-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, name: email.split('@')[0], provider })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        accessToken = data.accessToken;
+        showFeedback(`✓ Connected via ${provider}!`, false);
+        setTimeout(() => {
+          checkAuthStatus();
+        }, 800);
+      } else {
+        showFeedback(data.error.message || 'SSO sign-in failed.');
+      }
+    } catch (err) {
+      showFeedback('Unable to connect to authentication server.');
+    }
+  };
+
+  document.getElementById('btn-web-sso-google')?.addEventListener('click', () => handleSsoClick('Google'));
+  document.getElementById('btn-web-signup-sso-google')?.addEventListener('click', () => handleSsoClick('Google'));
+  document.getElementById('btn-web-sso-apple')?.addEventListener('click', () => handleSsoClick('Apple'));
+  document.getElementById('btn-web-signup-sso-apple')?.addEventListener('click', () => handleSsoClick('Apple'));
+
+  document.getElementById('btn-web-sso-phone')?.addEventListener('click', () => showWebAuthOverlay('phone'));
+  document.getElementById('btn-web-signup-sso-phone')?.addEventListener('click', () => showWebAuthOverlay('phone'));
+
+  // SUBMIT LOGIN
+  document.getElementById('web-auth-login-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('web-login-email').value.trim();
+    const password = document.getElementById('web-login-pass').value;
+    const rememberMe = document.getElementById('web-login-remember').checked;
+
+    showFeedback('Logging in...', false);
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, rememberMe })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        webFailedLoginAttempts = 0;
+        accessToken = data.accessToken;
+        showFeedback('✓ Welcome!', false);
+        setTimeout(() => {
+          checkAuthStatus();
+        }, 500);
+      } else {
+        showFeedback(data.error.message || 'Login failed.');
+        if (res.status === 401) {
+          webFailedLoginAttempts++;
+          if (webFailedLoginAttempts >= 3) {
+            const feedbackElem = document.getElementById('web-auth-global-feedback');
+            if (feedbackElem) {
+              feedbackElem.innerHTML = `Invalid email or password. Continuously wrong? <a href="#" id="link-web-forgot-suggest" style="text-decoration: underline; color: inherit; font-weight: bold;">Reset password here</a>`;
+              document.getElementById('link-web-forgot-suggest')?.addEventListener('click', (e) => {
+                e.preventDefault();
+                showWebAuthOverlay('forgot');
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      showFeedback('Unable to connect to the server.');
+    }
+  });
+
+  // SUBMIT PHONE NO (Send SMS OTP)
+  document.getElementById('web-auth-phone-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const cc = document.getElementById('web-phone-cc').value.trim();
+    const phoneNum = document.getElementById('web-phone-number').value.trim();
+
+    if (!cc || !phoneNum) {
+      showFeedback('Country code and phone number are required.');
+      return;
+    }
+    if (!cc.startsWith('+') || cc.length < 2) {
+      showFeedback('Country code must start with "+" (e.g. +91).');
+      return;
+    }
+    if (phoneNum.length < 7) {
+      showFeedback('Please enter a valid phone number.');
+      return;
+    }
+
+    selectedCountryCode = cc;
+    selectedPhoneNumber = phoneNum;
+    showFeedback('Requesting phone verification code...', false);
+
+    try {
+      const res = await fetch('/api/auth/phone-send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ countryCode: cc, phoneNumber: phoneNum })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        otpEmail = cc + phoneNum;
+        otpType = 'phone';
+        showWebAuthOverlay('otp');
+        
+        const subtitleEl = document.getElementById('web-otp-subtitle');
+        if (subtitleEl) {
+          subtitleEl.innerText = `Please enter the 6-digit verification code sent to ${cc} ${phoneNum}.`;
+        }
+        
+        // Expose simulated OTP in development mode directly to user for premium convenience
+        if (data.otpCode) {
+          showFeedback(`[SMS Simulation] OTP sent: ${data.otpCode}`, false);
+        } else {
+          showFeedback('Verification OTP sent successfully via SMS.', false);
+        }
+        
+        if (data.cooldownSeconds) startCooldown(data.cooldownSeconds);
+        
+        // Initialize WebOTP API listener
+        startWebOtpListener();
+      } else {
+        showFeedback(data.error.message || 'Failed to send OTP.');
+      }
+    } catch (err) {
+      showFeedback('Unable to connect to server.');
+    }
+  });
+
+  // SUBMIT SIGNUP (Progressive Step 4 Final Submit) - Moved to Step 3 click listener
+  // (Form no longer has checkboxes / Step 4)
+
+  // SUBMIT OTP VERIFICATION
+  document.getElementById('web-auth-otp-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = document.getElementById('web-otp-code').value.trim();
+
+    showFeedback('Verifying code...', false);
+
+    if (otpType === 'phone') {
+      // Verify Phone OTP
+      try {
+        const res = await fetch('/api/auth/phone-verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ countryCode: selectedCountryCode, phoneNumber: selectedPhoneNumber, code })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          if (data.isRegistered) {
+            accessToken = data.accessToken;
+            showFeedback('✓ Verified and Logged in!', false);
+            setTimeout(() => {
+              checkAuthStatus();
+            }, 800);
+          } else {
+            phoneVerificationToken = data.phoneVerificationToken;
+            showFeedback('✓ Phone verified! Please complete your profile.', false);
+            setTimeout(() => {
+              showWebAuthOverlay('signup');
+              // Move directly to Step 3 (Profile Attributes) for phone signup
+              document.getElementById('web-signup-step-1').style.display = 'none';
+              document.getElementById('web-signup-step-2').style.display = 'none';
+              document.getElementById('web-signup-step-3').style.display = 'block';
+            }, 800);
+          }
+        } else {
+          showFeedback(data.error.message || 'OTP verification failed.');
+        }
+      } catch (err) {
+        showFeedback('Unable to connect to server.');
+      }
+    } else {
+      // Email verification (signup or forgot password)
+      try {
+        const res = await fetch('/api/auth/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: otpEmail, code, type: otpType })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          if (otpType === 'signup') {
+            accessToken = data.accessToken;
+            showFeedback('✓ Email verified! Welcome to DnD.', false);
+            setTimeout(() => {
+              checkAuthStatus();
+            }, 800);
+          } else if (otpType === 'forgot_password') {
+            verificationToken = data.verificationToken;
+            showWebAuthOverlay('reset');
+            document.getElementById('web-reset-code').value = code;
+            showFeedback('Code verified successfully. Enter new password.', false);
+          }
+        } else {
+          showFeedback(data.error.message || 'Verification failed.');
+        }
+      } catch (err) {
+        showFeedback('Unable to connect to the server.');
+      }
+    }
+  });
+
+  // RESEND OTP
+  document.getElementById('btn-web-resend-otp')?.addEventListener('click', async () => {
+    showFeedback('Resending code...', false);
+    
+    if (otpType === 'phone') {
+      try {
+        const res = await fetch('/api/auth/phone-send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ countryCode: selectedCountryCode, phoneNumber: selectedPhoneNumber })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          if (data.otpCode) {
+            showFeedback(`[SMS Simulation] Resent OTP: ${data.otpCode}`, false);
+          } else {
+            showFeedback('A new verification OTP has been sent via SMS.', false);
+          }
+          if (data.cooldownSeconds) startCooldown(data.cooldownSeconds);
+          startWebOtpListener(); // Restart SMS retriever
+        } else {
+          showFeedback(data.error.message || 'Resend failed.');
+        }
+      } catch (err) {
+        showFeedback('Unable to connect to server.');
+      }
+    } else {
+      try {
+        const res = await fetch('/api/auth/resend-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: otpEmail, type: otpType })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showFeedback('A new verification code has been sent.', false);
+          if (data.cooldownSeconds) startCooldown(data.cooldownSeconds);
+        } else {
+          showFeedback(data.error.message || 'Resend failed.');
+        }
+      } catch (err) {
+        showFeedback('Unable to connect to the server.');
+      }
+    }
+  });
+
+  // SUBMIT FORGOT PASSWORD
+  document.getElementById('web-auth-forgot-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('web-forgot-email').value.trim();
+
+    showFeedback('Sending reset link...', false);
+
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showFeedback('If an account exists with that email, a password reset link has been sent.', false);
+        document.getElementById('web-forgot-email').value = '';
+      } else {
+        showFeedback(data.error.message || 'Forgot password request failed.');
+      }
+    } catch (err) {
+      showFeedback('Unable to connect to the server.');
+    }
+  });
+
+  // SUBMIT RESET PASSWORD
+  document.getElementById('web-auth-reset-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const newPassword = document.getElementById('web-reset-new-pass').value;
+    const confirmPassword = document.getElementById('web-reset-confirm-pass').value;
+
+    if (newPassword !== confirmPassword) {
+      showFeedback('Passwords do not match.');
+      return;
+    }
+
+    if (newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword) || !/[!@#$%^&*(),.?":{}|<>]/.test(newPassword)) {
+      showFeedback('Password must be at least 8 characters and contain uppercase, lowercase, digit, and special symbol.');
+      return;
+    }
+
+    showFeedback('Resetting password...', false);
+
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail, token: resetToken, newPassword, confirmPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showFeedback('✓ Password reset successfully! Please login with your new credentials.', false);
+        resetEmail = '';
+        resetToken = '';
+        setTimeout(() => {
+          showWebAuthOverlay('login');
+        }, 1500);
+      } else {
+        showFeedback(data.error.message || 'Reset password failed.');
+      }
+    } catch (err) {
+      showFeedback('Unable to connect to the server.');
+    }
+  });
+
+  // CHECK FOR RESET PASSWORD PARAMETERS IN URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const tokenParam = urlParams.get('token');
+  const emailParam = urlParams.get('email');
+  if (tokenParam && emailParam) {
+    resetToken = tokenParam;
+    resetEmail = emailParam;
+    // Clear URL parameters
+    window.history.replaceState({}, document.title, window.location.pathname);
+    // Show reset form
+    showWebAuthOverlay('reset');
+  }
 }
 
 // --- VIEW CONTROLLER ---
 async function updateViewContent() {
   updateUserXPHeader();
+
+  // Show bell and calendar buttons only on Dashboard view
+  const notificationsBtn = document.getElementById('btn-header-notifications');
+  const calendarBtn = document.getElementById('btn-header-date');
+  if (notificationsBtn && calendarBtn) {
+    if (state.activeView === 'view-dashboard') {
+      notificationsBtn.style.display = 'flex';
+      calendarBtn.style.display = 'flex';
+    } else {
+      notificationsBtn.style.display = 'none';
+      calendarBtn.style.display = 'none';
+      
+      const notificationsDropdown = document.getElementById('header-notifications-dropdown');
+      const calendarDropdown = document.getElementById('header-calendar-dropdown');
+      if (notificationsDropdown) notificationsDropdown.style.display = 'none';
+      if (calendarDropdown) calendarDropdown.classList.remove('active');
+    }
+  }
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const isWidgetView = urlParams.get('view') === 'widget';
+  if (isWidgetView) {
+    await renderFullscreenWidgetView();
+    return;
+  } else {
+    const appContainer = document.querySelector('.app-container');
+    if (appContainer) appContainer.style.display = '';
+    const fullscreenView = document.getElementById('fullscreen-widget-view');
+    if (fullscreenView) fullscreenView.style.display = 'none';
+  }
 
   // Refresh active view
   if (state.activeView === 'view-dashboard') {
@@ -1085,28 +2137,30 @@ async function checkAchievements() {
 // --- INTERACTIVE NOTIFICATION SPLASH ---
 function showNotification(text, backgroundGradient) {
   const container = document.createElement('div');
-  container.style.position = 'fixed';
-  container.style.bottom = '24px';
-  container.style.right = '24px';
-  container.style.background = backgroundGradient || 'rgba(22, 25, 49, 0.9)';
-  container.style.border = '1px solid rgba(255, 255, 255, 0.15)';
-  container.style.backdropFilter = 'blur(12px)';
-  container.style.color = '#fff';
-  container.style.padding = '1rem 1.5rem';
-  container.style.borderRadius = '16px';
-  container.style.boxShadow = '0 12px 32px rgba(0, 0, 0, 0.4)';
-  container.style.zIndex = '9999';
-  container.style.display = 'flex';
-  container.style.alignItems = 'center';
-  container.style.gap = '0.75rem';
-  container.style.fontFamily = 'var(--font-primary)';
-  container.style.fontWeight = '600';
-  container.style.fontSize = '0.95rem';
-  container.style.transform = 'translateY(100px)';
-  container.style.opacity = '0';
-  container.style.transition = 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)';
+  container.className = 'notification-toast';
 
-  container.innerHTML = `<span>${text}</span>`;
+  // Extract a subtle prefix icon depending on type of message (e.g. success, error, warning)
+  let prefix = '';
+  // Clean emoji/warning markers from base text if they exist in text to avoid duplication
+  let cleanText = text;
+  if (text.startsWith('⚠️')) {
+    prefix = '<span style="color: #f43f5e; font-weight: bold; margin-right: 6px; font-size: 1.1rem;">⚠️</span>';
+    cleanText = text.substring(2).trim();
+  } else if (text.startsWith('🔒')) {
+    prefix = '<span style="color: #fbbf24; font-weight: bold; margin-right: 6px; font-size: 1.1rem;">🔒</span>';
+    cleanText = text.substring(2).trim();
+  } else if (text.startsWith('✨')) {
+    prefix = '<span style="color: #6366f1; font-weight: bold; margin-right: 6px; font-size: 1.1rem;">✨</span>';
+    cleanText = text.substring(2).trim();
+  } else if (cleanText.toLowerCase().includes('success') || cleanText.toLowerCase().includes('complete') || cleanText.toLowerCase().includes('saved') || cleanText.toLowerCase().includes('unlocked')) {
+    prefix = '<span style="color: #10b981; font-weight: bold; margin-right: 6px; font-size: 1.1rem;">✓</span>';
+  } else if (cleanText.toLowerCase().includes('error') || cleanText.toLowerCase().includes('invalid') || cleanText.toLowerCase().includes('fail') || cleanText.toLowerCase().includes('trash')) {
+    prefix = '<span style="color: #f43f5e; font-weight: bold; margin-right: 6px; font-size: 1.1rem;">⚠️</span>';
+  } else {
+    prefix = '<span style="color: #6366f1; font-weight: bold; margin-right: 6px; font-size: 1.1rem;">ℹ</span>';
+  }
+
+  container.innerHTML = `<div style="display: flex; align-items: center; gap: 0.5rem;">${prefix}<span>${cleanText}</span></div>`;
   document.body.appendChild(container);
 
   // Trigger entering animation
@@ -1132,6 +2186,9 @@ async function renderDashboardView() {
 
   // Render Daily Core Quest Card
   renderCoreQuestCard();
+
+  // Render Interactive Onboarding Guide
+  await renderOnboardingGuide();
 
   // Compute Active Today Agenda Habits based on schedule rules
   const dueTodayHabits = activeHabits.filter(habit => isHabitDueOnDate(habit, new Date()));
@@ -1615,7 +2672,7 @@ async function renderHabitsView() {
           ` : ''}
           ${shieldBadgeMarkup}
           <button class="btn-card-edit" title="Configure habit settings">
-            <i data-lucide="more-vertical"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: block;"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
           </button>
         </div>
       </div>
@@ -1633,8 +2690,8 @@ async function renderHabitsView() {
             <span class="score-pill-lbl" data-lang="lbl_max_streak">Max Streak</span>
           </div>
         </div>
-        <div class="header-date-badge" style="padding: 0.35rem 0.65rem; border-radius: 8px; font-size: 0.75rem;">
-          <i data-lucide="calendar"></i>
+        <div class="header-date-badge" style="padding: 0.35rem 0.65rem; border-radius: 8px; font-size: 0.75rem; display: flex; align-items: center; gap: 0.35rem;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: block;"><path d="M8 2v4"></path><path d="M16 2v4"></path><rect width="18" height="18" x="3" y="4" rx="2"></rect><path d="M3 10h18"></path></svg>
           <span>${habit.frequency.type === 'daily' ? 'Daily' : 'Custom'}</span>
         </div>
       </div>
@@ -2429,6 +3486,220 @@ function renderWidgetsView() {
   });
 }
 
+// --- 5B. FULLSCREEN PWA WIDGET VIEW ---
+async function renderFullscreenWidgetView() {
+  // Hide main app container
+  const appContainer = document.querySelector('.app-container');
+  if (appContainer) {
+    appContainer.style.display = 'none';
+  }
+
+  // Show fullscreen widget view
+  const fullscreenView = document.getElementById('fullscreen-widget-view');
+  if (fullscreenView) {
+    fullscreenView.style.display = 'flex';
+  }
+
+  const container = document.getElementById('fullscreen-widget-container');
+  if (!container) return;
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const habitId = parseInt(urlParams.get('habitId'));
+  const size = urlParams.get('size') || 'medium';
+  const theme = urlParams.get('theme') || 'glass';
+  const alerts = urlParams.get('alerts') !== 'false';
+
+  const h = state.habits.find(habit => habit.id === habitId);
+  if (!h) {
+    container.innerHTML = `
+      <div style="color: var(--text-muted); text-align: center; display: flex; flex-direction: column; gap: 1rem; align-items: center;">
+        <span style="font-size: 3rem;">⚠️</span>
+        <h3 style="margin: 0; color: #fff; font-size: 1.1rem; font-weight: 700;">Widget Configuration Error</h3>
+        <p style="margin: 0; font-size: 0.85rem; max-width: 280px; line-height: 1.4;">The requested habit could not be found or has been deleted.</p>
+        <a href="/" class="accent-glow-btn" style="margin-top: 1rem; text-decoration: none; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.8rem; font-weight: bold; background: var(--color-indigo); color: #fff; border: none; cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+          <i data-lucide="home" style="width: 14px; height: 14px;"></i> Open Full App
+        </a>
+      </div>
+    `;
+    lucide.createIcons();
+    return;
+  }
+
+  const stats = await state.db.getStreakStats(h.id);
+  const score = await state.db.getHabitScore(h.id, h.createdTime);
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const compKey = `${h.id}_${todayStr}`;
+  const compRecord = state.completions.find(c => c.id === compKey);
+  const isCompleted = compRecord ? compRecord.completed : false;
+  const isStreakAtRisk = alerts && !isCompleted && isHabitDueOnDate(h, new Date());
+
+  // Create widget outer element
+  const widgetEl = document.createElement('div');
+  widgetEl.className = `phone-widget-element widget-${size} widget-${theme}`;
+  widgetEl.style.cursor = 'pointer';
+  // Let the user tap the widget itself to open the app!
+  widgetEl.addEventListener('click', () => {
+    window.location.href = '/';
+  });
+
+  if (size === 'small') {
+    if (isStreakAtRisk) {
+      widgetEl.innerHTML = `
+        <div class="widget-header-row">
+          <span class="widget-icon-lbl">${h.emoji}</span>
+          <span class="widget-title-lbl" style="color: #f43f5e; font-weight: bold; animation: pulseGlow 2s infinite;">⚠️ ALERT</span>
+        </div>
+        <div class="widget-streak-middle">
+          <span class="widget-streak-num">🔥 ${stats.currentStreak}</span>
+          <span class="widget-streak-lbl" style="color: #fda4af;">Streak at Risk!</span>
+        </div>
+        <span class="widget-habit-name">${h.name}</span>
+      `;
+    } else {
+      widgetEl.innerHTML = `
+        <div class="widget-header-row">
+          <span class="widget-icon-lbl">${h.emoji}</span>
+          <span class="widget-title-lbl">DnD</span>
+        </div>
+        <div class="widget-streak-middle">
+          <span class="widget-streak-num">🔥 ${stats.currentStreak}</span>
+          <span class="widget-streak-lbl">Active Streak</span>
+        </div>
+        <span class="widget-habit-name">${h.name}</span>
+      `;
+    }
+  } else if (size === 'medium') {
+    if (isStreakAtRisk) {
+      widgetEl.innerHTML = `
+        <div class="widget-header-row">
+          <div class="flex align-center gap-0.25">
+            <span class="widget-icon-lbl">${h.emoji}</span>
+            <span class="widget-habit-name" style="max-width: 140px;">${h.name}</span>
+          </div>
+          <span class="widget-title-lbl" style="color: #f43f5e; font-weight: bold; animation: pulseGlow 2s infinite;">⚠️ AT RISK</span>
+        </div>
+        
+        <div class="widget-streak-middle" style="flex-direction: row; justify-content: space-between; align-items: flex-end;">
+          <div>
+            <span class="widget-streak-num">🔥 ${stats.currentStreak}</span>
+            <span class="widget-streak-lbl" style="display:block; color: #fda4af;">Streak incomplete today!</span>
+          </div>
+          <div class="widget-progress-row" style="width: 100px;">
+            <span>Score: ${score}%</span>
+            <div class="widget-progress-track">
+              <div class="widget-progress-fill" style="width: ${score}%;"></div>
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      widgetEl.innerHTML = `
+        <div class="widget-header-row">
+          <div class="flex align-center gap-0.25">
+            <span class="widget-icon-lbl">${h.emoji}</span>
+            <span class="widget-habit-name" style="max-width: 140px;">${h.name}</span>
+          </div>
+          <span class="widget-title-lbl">Streaks</span>
+        </div>
+        
+        <div class="widget-streak-middle" style="flex-direction: row; justify-content: space-between; align-items: flex-end;">
+          <div>
+            <span class="widget-streak-num">🔥 ${stats.currentStreak}</span>
+            <span class="widget-streak-lbl" style="display:block;">Days current streak</span>
+          </div>
+          <div class="widget-progress-row" style="width: 100px;">
+            <span>Score: ${score}%</span>
+            <div class="widget-progress-track">
+              <div class="widget-progress-fill" style="width: ${score}%;"></div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  } else {
+    // Large 4x4
+    if (isStreakAtRisk) {
+      widgetEl.innerHTML = `
+        <div class="widget-header-row">
+          <span class="widget-icon-lbl">${h.emoji}</span>
+          <span class="widget-habit-name">${h.name}</span>
+          <span class="widget-title-lbl" style="color: #f43f5e; font-weight: bold;">⚠️ ALERT</span>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:0.5rem; margin: 0.75rem 0;">
+          <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
+            <span>Current Streak:</span>
+            <strong style="color:#f43f5e; animation: textPulse 2s infinite; display: inline-block;">🔥 ${stats.currentStreak} Days (At Risk)</strong>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
+            <span>Longest Streak:</span>
+            <strong>⚡ ${stats.longestStreak} Days</strong>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
+            <span>Consistency Score:</span>
+            <strong>📈 ${score}/100</strong>
+          </div>
+        </div>
+        
+        <div class="widget-alert-box" style="background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); border-radius: 8px; padding: 0.5rem; font-size: 0.7rem; color: #fca5a5; line-height: 1.3; margin-bottom: 0.75rem; text-align: left;">
+          <strong>⚠️ Streak warning:</strong> Complete today's checklists before midnight to protect your active streak.
+        </div>
+        
+        <div class="widget-progress-row">
+          <span>Consistency Weight</span>
+          <div class="widget-progress-track">
+            <div class="widget-progress-fill" style="width: ${score}%;"></div>
+          </div>
+        </div>
+      `;
+    } else {
+      widgetEl.innerHTML = `
+        <div class="widget-header-row">
+          <span class="widget-icon-lbl">${h.emoji}</span>
+          <span class="widget-habit-name">${h.name}</span>
+          <span class="widget-title-lbl">Large Grid</span>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:0.5rem; margin: 1rem 0;">
+          <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
+            <span>Current Streak:</span>
+            <strong style="color:#f97316;">🔥 ${stats.currentStreak} Days</strong>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
+            <span>Longest Streak:</span>
+            <strong>⚡ ${stats.longestStreak} Days</strong>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
+            <span>Consistency Score:</span>
+            <strong>📈 ${score}/100</strong>
+          </div>
+        </div>
+        
+        <div class="widget-progress-row">
+          <span>Progress weight</span>
+          <div class="widget-progress-track">
+            <div class="widget-progress-fill" style="width: ${score}%;"></div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  container.innerHTML = '';
+  container.appendChild(widgetEl);
+
+  // Add "Open Full App" Link below the widget
+  const linkEl = document.createElement('a');
+  linkEl.href = '/';
+  linkEl.className = 'accent-glow-btn';
+  linkEl.style.cssText = 'margin-top: 1.5rem; text-decoration: none; padding: 0.6rem 1.2rem; border-radius: 10px; font-size: 0.8rem; font-weight: bold; background: var(--color-indigo); color: #fff; border: none; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: transform 0.2s;';
+  linkEl.innerHTML = `<i data-lucide="external-link" style="width: 14px; height: 14px;"></i> Open Full App`;
+  container.appendChild(linkEl);
+
+  lucide.createIcons();
+}
+
 // --- 6. ACHIEVEMENTS LIST ---
 async function renderAchievementsView() {
   const container = document.getElementById('badges-shelf-container');
@@ -2892,13 +4163,28 @@ async function renderSettingsView() {
 
   // Auto-render Mobile Widgets customizer inside settings view!
   renderWidgetsView();
+
+  // Refresh notifications preferences checkboxes in UI
+  refreshNotificationPreferencesUI();
 }
 
 function renderCategoryPills(containerId, activeCat, onClickCallback) {
   const container = document.getElementById(containerId);
+  if (!container) return;
   container.innerHTML = '';
 
   const categories = ['all', 'Fitness', 'Study', 'Health', 'Finance', 'Self-care', 'Productivity'];
+  
+  // Add any custom categories from active habits
+  const uniqueCustomCats = new Set();
+  if (state.habits) {
+    state.habits.forEach(h => {
+      if (!h.isDeleted && h.category && !categories.includes(h.category)) {
+        uniqueCustomCats.add(h.category);
+      }
+    });
+  }
+  uniqueCustomCats.forEach(cat => categories.push(cat));
   
   categories.forEach(cat => {
     const pill = document.createElement('span');
@@ -2906,13 +4192,13 @@ function renderCategoryPills(containerId, activeCat, onClickCallback) {
     
     // Localized label
     let label = cat;
-    if (cat === 'all') label = TRANSLATIONS[state.currentLang].emoji_tab_all;
-    else if (cat === 'Fitness') label = TRANSLATIONS[state.currentLang].cat_fitness;
-    else if (cat === 'Study') label = TRANSLATIONS[state.currentLang].cat_study;
-    else if (cat === 'Health') label = TRANSLATIONS[state.currentLang].cat_health;
-    else if (cat === 'Finance') label = TRANSLATIONS[state.currentLang].cat_finance;
-    else if (cat === 'Self-care') label = TRANSLATIONS[state.currentLang].cat_self_care;
-    else if (cat === 'Productivity') label = TRANSLATIONS[state.currentLang].cat_productivity;
+    if (cat === 'all') label = (TRANSLATIONS[state.currentLang] && TRANSLATIONS[state.currentLang].emoji_tab_all) || 'All';
+    else if (cat === 'Fitness' && TRANSLATIONS[state.currentLang]) label = TRANSLATIONS[state.currentLang].cat_fitness;
+    else if (cat === 'Study' && TRANSLATIONS[state.currentLang]) label = TRANSLATIONS[state.currentLang].cat_study;
+    else if (cat === 'Health' && TRANSLATIONS[state.currentLang]) label = TRANSLATIONS[state.currentLang].cat_health;
+    else if (cat === 'Finance' && TRANSLATIONS[state.currentLang]) label = TRANSLATIONS[state.currentLang].cat_finance;
+    else if (cat === 'Self-care' && TRANSLATIONS[state.currentLang]) label = TRANSLATIONS[state.currentLang].cat_self_care;
+    else if (cat === 'Productivity' && TRANSLATIONS[state.currentLang]) label = TRANSLATIONS[state.currentLang].cat_productivity;
 
     pill.innerText = label;
     
@@ -3399,7 +4685,60 @@ function openHabitCreatorModal(habitToEdit = null) {
   state.habitModalSubtasks = [];
   document.getElementById('modal-subtasks-builder-list').innerHTML = '';
   document.getElementById('new-subtask-input').value = '';
+  const inputContainer = document.getElementById('subtasks-input-container');
+  if (inputContainer) inputContainer.style.display = 'none';
+  const triggerBtn = document.getElementById('btn-trigger-add-subtask');
+  if (triggerBtn) triggerBtn.style.display = 'flex';
   document.getElementById('habit-creator-form').reset();
+
+  const customGroup = document.getElementById('habit-custom-category-group');
+  if (customGroup) customGroup.style.display = 'none';
+  const customInput = document.getElementById('habit-custom-category');
+  if (customInput) {
+    customInput.value = '';
+    customInput.required = false;
+  }
+
+  const catSelect = document.getElementById('habit-category');
+  if (catSelect) {
+    catSelect.innerHTML = '';
+    const presets = ['Fitness', 'Study', 'Health', 'Finance', 'Self-care', 'Productivity'];
+    presets.forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat;
+      let label = cat;
+      if (cat === 'Fitness' && TRANSLATIONS[state.currentLang]) label = TRANSLATIONS[state.currentLang].cat_fitness;
+      else if (cat === 'Study' && TRANSLATIONS[state.currentLang]) label = TRANSLATIONS[state.currentLang].cat_study;
+      else if (cat === 'Health' && TRANSLATIONS[state.currentLang]) label = TRANSLATIONS[state.currentLang].cat_health;
+      else if (cat === 'Finance' && TRANSLATIONS[state.currentLang]) label = TRANSLATIONS[state.currentLang].cat_finance;
+      else if (cat === 'Self-care' && TRANSLATIONS[state.currentLang]) label = TRANSLATIONS[state.currentLang].cat_self_care;
+      else if (cat === 'Productivity' && TRANSLATIONS[state.currentLang]) label = TRANSLATIONS[state.currentLang].cat_productivity;
+      opt.innerText = label;
+      catSelect.appendChild(opt);
+    });
+
+    // Add existing custom categories from active habits
+    const uniqueCustomCats = new Set();
+    if (state.habits) {
+      state.habits.forEach(h => {
+        if (!h.isDeleted && h.category && !presets.includes(h.category) && h.category !== 'custom') {
+          uniqueCustomCats.add(h.category);
+        }
+      });
+    }
+    uniqueCustomCats.forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat;
+      opt.innerText = cat;
+      catSelect.appendChild(opt);
+    });
+
+    // Add + Add Custom Category... option
+    const customOpt = document.createElement('option');
+    customOpt.value = 'custom';
+    customOpt.innerText = '+ Add Custom Category...';
+    catSelect.appendChild(customOpt);
+  }
 
   const title = document.getElementById('habit-modal-title');
   const deleteBtn = document.getElementById('btn-delete-habit-creator');
@@ -3646,8 +4985,9 @@ function translateUI(lang) {
   const elements = document.querySelectorAll('[data-lang]');
   elements.forEach(el => {
     const key = el.getAttribute('data-lang');
-    if (TRANSLATIONS[lang][key]) {
-      el.innerText = TRANSLATIONS[lang][key];
+    const text = (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || (TRANSLATIONS['en'] && TRANSLATIONS['en'][key]);
+    if (text) {
+      el.innerText = text;
     }
   });
 
@@ -3655,8 +4995,9 @@ function translateUI(lang) {
   const inputs = document.querySelectorAll('[data-lang-placeholder]');
   inputs.forEach(el => {
     const key = el.getAttribute('data-lang-placeholder');
-    if (TRANSLATIONS[lang][key]) {
-      el.placeholder = TRANSLATIONS[lang][key];
+    const placeholder = (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || (TRANSLATIONS['en'] && TRANSLATIONS['en'][key]);
+    if (placeholder) {
+      el.placeholder = placeholder;
     }
   });
 
@@ -3700,7 +5041,7 @@ function attachEventListeners() {
   // Navigation Tabs Switchers
   const navBtns = document.querySelectorAll('.sidebar-nav .nav-btn');
   navBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       closeSidebar();
       navBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -3745,6 +5086,7 @@ function attachEventListeners() {
   if (btnHeaderDate && calendarDropdown) {
     btnHeaderDate.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (notificationsDropdown) notificationsDropdown.style.display = 'none';
       calendarDropdown.classList.toggle('active');
       if (calendarDropdown.classList.contains('active')) {
         state.calendarDate = new Date(); // Reset to current month on open!
@@ -3759,6 +5101,95 @@ function attachEventListeners() {
     document.addEventListener('click', () => {
       calendarDropdown.classList.remove('active');
     });
+  }
+
+  // Notifications Dropdown Popover Toggling
+  const btnHeaderNotifications = document.getElementById('btn-header-notifications');
+  const notificationsDropdown = document.getElementById('header-notifications-dropdown');
+
+  if (btnHeaderNotifications && notificationsDropdown) {
+    btnHeaderNotifications.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (calendarDropdown) calendarDropdown.classList.remove('active');
+      
+      const isOpen = notificationsDropdown.style.display === 'flex';
+      if (isOpen) {
+        notificationsDropdown.style.display = 'none';
+      } else {
+        notificationsDropdown.style.display = 'flex';
+        AppNotifications.renderDropdown();
+        AppNotifications.updateBellBadge();
+      }
+    });
+
+    notificationsDropdown.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
+    document.addEventListener('click', () => {
+      if (notificationsDropdown) notificationsDropdown.style.display = 'none';
+    });
+
+    // Mark all read button
+    const btnMarkAllRead = document.getElementById('btn-notif-mark-all-read');
+    if (btnMarkAllRead) {
+      btnMarkAllRead.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await AppNotifications.markAllAsRead();
+      });
+    }
+
+    // Clear history button
+    const btnClearAll = document.getElementById('btn-notif-clear-all');
+    if (btnClearAll) {
+      btnClearAll.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await AppNotifications.clearAllRead();
+      });
+    }
+
+    // Search input
+    const notifSearchInput = document.getElementById('notif-search-input');
+    if (notifSearchInput) {
+      notifSearchInput.addEventListener('input', () => {
+        AppNotifications.renderDropdown();
+      });
+    }
+
+    // Filter pills
+    const filterPills = document.querySelectorAll('.notif-filter-pill');
+    filterPills.forEach(pill => {
+      pill.addEventListener('click', (e) => {
+        e.stopPropagation();
+        filterPills.forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        AppNotifications.renderDropdown();
+      });
+    });
+
+    // Go to settings button
+    const btnGoSettings = document.getElementById('btn-notif-go-settings');
+    if (btnGoSettings) {
+      btnGoSettings.addEventListener('click', (e) => {
+        e.stopPropagation();
+        notificationsDropdown.style.display = 'none';
+        const settingsTab = document.querySelector('.sidebar-nav .nav-btn[data-target="view-settings"]');
+        if (settingsTab) {
+          settingsTab.click();
+          // Scroll to notifications settings block
+          setTimeout(() => {
+            const notifBlock = document.querySelector('.settings-block-wrapper');
+            if (notifBlock) {
+              notifBlock.scrollIntoView({ behavior: 'smooth' });
+              notifBlock.style.borderColor = 'hsl(var(--color-indigo))';
+              setTimeout(() => {
+                notifBlock.style.borderColor = 'var(--border-glass)';
+              }, 1500);
+            }
+          }, 300);
+        }
+      });
+    }
   }
 
   // Habits View: Toggles List vs Streak Card systems
@@ -3827,12 +5258,38 @@ function attachEventListeners() {
   });
 
   // Habit Modal checklists builder tasks adder
+  const triggerAddSubtaskBtn = document.getElementById('btn-trigger-add-subtask');
+  const cancelAddSubtaskBtn = document.getElementById('btn-cancel-add-subtask');
+  const subtaskInputContainer = document.getElementById('subtasks-input-container');
   const addSubtaskBtn = document.getElementById('btn-add-subtask-to-list');
   const subtaskInput = document.getElementById('new-subtask-input');
 
-  addSubtaskBtn.addEventListener('click', () => {
+  if (triggerAddSubtaskBtn && subtaskInputContainer) {
+    triggerAddSubtaskBtn.addEventListener('click', () => {
+      triggerAddSubtaskBtn.style.display = 'none';
+      subtaskInputContainer.style.display = 'flex';
+      subtaskInput.value = '';
+      subtaskInput.focus();
+    });
+  }
+
+  if (cancelAddSubtaskBtn && subtaskInputContainer) {
+    cancelAddSubtaskBtn.addEventListener('click', () => {
+      subtaskInputContainer.style.display = 'none';
+      subtaskInput.value = '';
+      triggerAddSubtaskBtn.style.display = 'flex';
+    });
+  }
+
+  const handleAddSubtask = () => {
     const text = subtaskInput.value.trim();
-    if (text === '') return;
+    if (text === '') {
+      if (subtaskInputContainer && triggerAddSubtaskBtn) {
+        subtaskInputContainer.style.display = 'none';
+        triggerAddSubtaskBtn.style.display = 'flex';
+      }
+      return;
+    }
 
     state.habitModalSubtasks.push({
       id: Date.now(),
@@ -3841,7 +5298,51 @@ function attachEventListeners() {
     });
     subtaskInput.value = '';
     renderSubtasksBuilderList();
-  });
+    if (subtaskInputContainer && triggerAddSubtaskBtn) {
+      subtaskInputContainer.style.display = 'none';
+      triggerAddSubtaskBtn.style.display = 'flex';
+    }
+  };
+
+  if (addSubtaskBtn) {
+    addSubtaskBtn.addEventListener('click', handleAddSubtask);
+  }
+
+  if (subtaskInput) {
+    subtaskInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleAddSubtask();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        if (subtaskInputContainer && triggerAddSubtaskBtn) {
+          subtaskInputContainer.style.display = 'none';
+          triggerAddSubtaskBtn.style.display = 'flex';
+        }
+      }
+    });
+  }
+
+  const catSelect = document.getElementById('habit-category');
+  if (catSelect) {
+    catSelect.addEventListener('change', () => {
+      const customGroup = document.getElementById('habit-custom-category-group');
+      const customInput = document.getElementById('habit-custom-category');
+      if (catSelect.value === 'custom') {
+        if (customGroup) customGroup.style.display = 'block';
+        if (customInput) {
+          customInput.required = true;
+          customInput.focus();
+        }
+      } else {
+        if (customGroup) customGroup.style.display = 'none';
+        if (customInput) {
+          customInput.required = false;
+          customInput.value = '';
+        }
+      }
+    });
+  }
 
   // Save Habit Creator Form submission
   const creatorForm = document.getElementById('habit-creator-form');
@@ -3850,7 +5351,15 @@ function attachEventListeners() {
 
     const habitId = document.getElementById('habit-edit-id').value;
     const name = document.getElementById('habit-name').value.trim();
-    const category = document.getElementById('habit-category').value;
+    let category = document.getElementById('habit-category').value;
+    if (category === 'custom') {
+      const customVal = document.getElementById('habit-custom-category').value.trim();
+      if (!customVal) {
+        showNotification('⚠️ Enter a custom category name!', 'var(--color-rose)');
+        return;
+      }
+      category = customVal;
+    }
     const desc = document.getElementById('habit-desc').value.trim();
     const freqType = document.querySelector('input[name="habit-freq-type"]:checked').value;
 
@@ -3994,27 +5503,18 @@ function attachEventListeners() {
     renderDeepDiveSummary();
   });
 
-  // Analytics Timeframe range toggle buttons
-  const timeframeBtns = document.querySelectorAll('.timeframe-toggle-capsule .timeframe-btn');
-  timeframeBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      timeframeBtns.forEach(b => {
-        b.classList.remove('active');
-        b.style.background = 'transparent';
-        b.style.color = 'var(--text-muted)';
-      });
-      btn.classList.add('active');
-      btn.style.background = 'hsl(var(--color-indigo))';
-      btn.style.color = '#fff';
-
-      state.activeAnalyticsRange = btn.getAttribute('data-range');
+  // Analytics Timeframe range selector
+  const timeframeSelector = document.getElementById('analytics-timeframe-selector');
+  if (timeframeSelector) {
+    timeframeSelector.addEventListener('change', (e) => {
+      state.activeAnalyticsRange = e.target.value;
       
       // Re-render all modules with new range filters
       renderGitHubHeatmap();
       renderAnalyticalCharts();
       renderDeepDiveSummary();
     });
-  });
+  }
 
   // Custom widgets customizations
   const widgetThemeSel = document.getElementById('widget-theme-selector');
@@ -4087,6 +5587,72 @@ function attachEventListeners() {
     }
   }
 
+  // Real home screen widget setup
+  const btnGenerateReal = document.getElementById('btn-widget-generate-real');
+  const modalWidgetInstructions = document.getElementById('modal-widget-instructions');
+  const btnCloseInstructions = document.getElementById('btn-close-widget-instructions');
+  const btnCloseInstructionsFooter = document.getElementById('btn-close-widget-instructions-footer');
+  const btnWidgetCopyLink = document.getElementById('btn-widget-copy-link');
+
+  if (btnGenerateReal && modalWidgetInstructions) {
+    btnGenerateReal.addEventListener('click', () => {
+      const habitSelector = document.getElementById('widget-target-habit-select');
+      const habitId = state.activeWidgetHabitId || (habitSelector ? habitSelector.value : null);
+      if (!habitId) {
+        showNotification('⚠️ Create or select an active habit first!', 'var(--color-rose)');
+        return;
+      }
+      
+      const size = state.activeWidgetSize || 'medium';
+      const theme = state.activeWidgetTheme || 'glass';
+      const alertsToggle = document.getElementById('widget-show-alerts-toggle');
+      const alerts = alertsToggle ? alertsToggle.checked : true;
+      
+      const origin = window.location.origin;
+      const pathname = window.location.pathname;
+      const url = `${origin}${pathname}?view=widget&habitId=${habitId}&size=${size}&theme=${theme}&alerts=${alerts}`;
+      
+      const urlInput = document.getElementById('widget-generated-url-input');
+      if (urlInput) {
+        urlInput.value = url;
+      }
+      
+      modalWidgetInstructions.classList.add('active');
+    });
+  }
+
+  if (modalWidgetInstructions) {
+    if (btnCloseInstructions) {
+      btnCloseInstructions.addEventListener('click', () => {
+        modalWidgetInstructions.classList.remove('active');
+      });
+    }
+    if (btnCloseInstructionsFooter) {
+      btnCloseInstructionsFooter.addEventListener('click', () => {
+        modalWidgetInstructions.classList.remove('active');
+      });
+    }
+  }
+
+  if (btnWidgetCopyLink) {
+    btnWidgetCopyLink.addEventListener('click', () => {
+      const urlInput = document.getElementById('widget-generated-url-input');
+      if (urlInput && urlInput.value) {
+        urlInput.select();
+        urlInput.setSelectionRange(0, 99999); // For mobile devices
+        
+        navigator.clipboard.writeText(urlInput.value)
+          .then(() => {
+            showNotification('📋 Widget link copied to clipboard!', 'linear-gradient(135deg, #10b981, #6366f1)');
+          })
+          .catch(err => {
+            console.error('Failed to copy text: ', err);
+            showNotification('❌ Failed to copy link automatically.', 'var(--color-rose)');
+          });
+      }
+    });
+  }
+
   // Hidden Inventory modal triggers
   const btnOpenHiddenInventory = document.getElementById('btn-open-hidden-inventory-modal');
   const hiddenInventoryModal = document.getElementById('modal-hidden-inventory');
@@ -4118,6 +5684,50 @@ function attachEventListeners() {
     if (btnCloseHiddenInventoryFooter) {
       btnCloseHiddenInventoryFooter.addEventListener('click', closeModal);
     }
+  }
+
+  // Archive Vault modal triggers
+  const btnOpenArchive = document.getElementById('btn-open-archive-modal');
+  const archiveModal = document.getElementById('modal-archive-vault');
+  const btnCloseArchive = document.getElementById('btn-close-archive-modal');
+  const btnCloseArchiveFooter = document.getElementById('btn-close-archive-modal-footer');
+
+  if (btnOpenArchive && archiveModal) {
+    btnOpenArchive.addEventListener('click', () => {
+      renderSettingsView();
+      archiveModal.classList.add('active');
+    });
+  }
+
+  if (archiveModal) {
+    const closeArchive = () => {
+      archiveModal.classList.remove('active');
+      renderSettingsView();
+    };
+    if (btnCloseArchive) btnCloseArchive.addEventListener('click', closeArchive);
+    if (btnCloseArchiveFooter) btnCloseArchiveFooter.addEventListener('click', closeArchive);
+  }
+
+  // Trash modal triggers
+  const btnOpenTrash = document.getElementById('btn-open-trash-modal');
+  const trashModal = document.getElementById('modal-trash-vault');
+  const btnCloseTrash = document.getElementById('btn-close-trash-modal');
+  const btnCloseTrashFooter = document.getElementById('btn-close-trash-modal-footer');
+
+  if (btnOpenTrash && trashModal) {
+    btnOpenTrash.addEventListener('click', () => {
+      renderSettingsView();
+      trashModal.classList.add('active');
+    });
+  }
+
+  if (trashModal) {
+    const closeTrash = () => {
+      trashModal.classList.remove('active');
+      renderSettingsView();
+    };
+    if (btnCloseTrash) btnCloseTrash.addEventListener('click', closeTrash);
+    if (btnCloseTrashFooter) btnCloseTrashFooter.addEventListener('click', closeTrash);
   }
 
   // Settings: Theme toggles
@@ -4349,11 +5959,9 @@ function attachEventListeners() {
     }
     
     // Fallback if browser WebAuthn is not supported
-    if (confirm("⚠️ Device authentication is not supported by your browser. Do you confirm that you are the genuine owner of this device?")) {
-      return true;
-    }
-    throw new Error("Device ownership could not be verified.");
+    return true;
   }
+  window.verifyDeviceOwner = verifyDeviceOwner;
 
   // Hidden Inventory Unlock Event Listener
   const unlockBtn = document.getElementById('btn-unlock-hidden-inventory');
@@ -4370,7 +5978,7 @@ function attachEventListeners() {
         }
         try {
           showNotification('ℹ️ Please verify your device credentials (PIN/Fingerprint) to continue.', '#3b82f6');
-          await verifyDeviceOwner();
+          await window.verifyDeviceOwner();
         } catch (e) {
           showNotification(`❌ Setup failed: ${e.message}`, '#f43f5e');
           return;
@@ -4460,112 +6068,873 @@ function handleCompressedPhotoPreview(file) {
 
 
 
+// ================= MODERN PREMIUM NOTIFICATION ARCHITECTURE =================
+const AppNotifications = {
+  // Safe helper to check permission and enable notifications
+  async requestPermission() {
+    if (window.Capacitor?.Plugins?.LocalNotifications) {
+      const result = await window.Capacitor.Plugins.LocalNotifications.requestPermissions();
+      return result.display === 'granted';
+    } else if ('Notification' in window) {
+      const permission = await Notification.requestPermission();
+      return permission === 'granted';
+    }
+    return false;
+  },
+
+  async hasPermission() {
+    if (window.Capacitor?.Plugins?.LocalNotifications) {
+      const result = await window.Capacitor.Plugins.LocalNotifications.checkPermissions();
+      return result.display === 'granted';
+    } else if ('Notification' in window) {
+      return Notification.permission === 'granted';
+    }
+    return false;
+  },
+
+  // Save preference and synchronize switches
+  async savePreference(key, value) {
+    state.notificationPreferences[key] = value;
+    await state.db.setSetting('notification_preferences', state.notificationPreferences);
+  },
+
+  // Log and display immediate notifications
+  async sendImmediate(title, text, category = 'system') {
+    // Check preference
+    const prefKey = `notif_${category}`;
+    if (state.notificationPreferences[prefKey] === false) {
+      return; // Suppressed by preference
+    }
+
+    // 1. Log to history list
+    const notifItem = {
+      id: Date.now() + '-' + Math.round(Math.random() * 1000),
+      title: title,
+      text: text,
+      category: category,
+      timestamp: Date.now(),
+      read: false
+    };
+    state.notifications.unshift(notifItem);
+    
+    // Cap at 100 notifications to keep DB and memory usage low
+    if (state.notifications.length > 100) {
+      state.notifications = state.notifications.slice(0, 100);
+    }
+    await state.db.setSetting('notifications_list', state.notifications);
+
+    // 2. Play audio cue if enabled
+    if (state.notificationPreferences.notif_audio !== false && !state.audio.muted) {
+      if (state.audio.playChime) {
+        state.audio.playChime();
+      }
+    }
+
+    // 3. Show in-app premium toast card
+    this.showPremiumToast(notifItem);
+
+    // 4. Send native/web push notification
+    if (window.DnDAndroid && typeof window.DnDAndroid.showLocalNotification === 'function') {
+      try {
+        window.DnDAndroid.showLocalNotification(title, text);
+      } catch (e) {
+        console.error('DnDAndroid notification failed:', e);
+      }
+    } else if (window.Capacitor?.Plugins?.LocalNotifications) {
+      try {
+        await window.Capacitor.Plugins.LocalNotifications.schedule({
+          notifications: [
+            {
+              title: title,
+              body: text,
+              id: Math.floor(Math.random() * 1000000),
+              schedule: { at: new Date(Date.now() + 50) } // almost immediate
+            }
+          ]
+        });
+      } catch (e) {
+        console.error('Capacitor local notification failed:', e);
+      }
+    } else if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, { body: text });
+    }
+
+    // 5. Re-render Notifications Center dropdown
+    this.renderDropdown();
+    this.updateBellBadge();
+  },
+
+  // Toast container for cleaner, compact alerts
+  showPremiumToast(notif) {
+    let toastContainer = document.getElementById('premium-toast-container');
+    if (!toastContainer) {
+      toastContainer = document.createElement('div');
+      toastContainer.id = 'premium-toast-container';
+      toastContainer.className = 'premium-toast-container';
+      document.body.appendChild(toastContainer);
+    }
+
+    const card = document.createElement('div');
+    card.className = `premium-toast-card notif-cat-${notif.category} slide-in`;
+    
+    // Choose appropriate SVG icon based on category
+    let iconSvg = '';
+    if (notif.category === 'reminder') {
+      iconSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path></svg>`;
+    } else if (notif.category === 'guidance') {
+      iconSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
+    } else if (notif.category === 'success') {
+      iconSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
+    } else {
+      iconSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
+    }
+
+    card.innerHTML = `
+      <div class="toast-icon-wrapper">${iconSvg}</div>
+      <div class="toast-content">
+        <div class="toast-title">${notif.title}</div>
+        <div class="toast-text">${notif.text}</div>
+      </div>
+      <button type="button" class="toast-close-btn">&times;</button>
+    `;
+
+    toastContainer.appendChild(card);
+
+    // Auto-remove after 4s
+    const removeToast = () => {
+      card.classList.remove('slide-in');
+      card.classList.add('slide-out');
+      setTimeout(() => card.remove(), 400);
+    };
+
+    const autoTimer = setTimeout(removeToast, 4000);
+
+    card.querySelector('.toast-close-btn').addEventListener('click', () => {
+      clearTimeout(autoTimer);
+      removeToast();
+    });
+  },
+
+  // Update notification bell unread badge
+  updateBellBadge() {
+    const badge = document.getElementById('bell-unread-dot');
+    if (!badge) return;
+    const unreadCount = state.notifications.filter(n => !n.read).length;
+    if (unreadCount > 0) {
+      badge.style.display = 'flex';
+      badge.textContent = unreadCount;
+      badge.className = 'bell-unread-badge';
+    } else {
+      badge.style.display = 'none';
+    }
+  },
+
+  // Render list dropdown
+  renderDropdown() {
+    const listContainer = document.getElementById('notif-list-container');
+    if (!listContainer) return;
+
+    // Filter search
+    const searchVal = (document.getElementById('notif-search-input')?.value || '').toLowerCase().trim();
+    // Filter category
+    const activeFilterEl = document.querySelector('.notif-filter-pill.active');
+    const filterCat = activeFilterEl ? activeFilterEl.getAttribute('data-filter') : 'all';
+
+    let filtered = state.notifications;
+    if (filterCat !== 'all') {
+      filtered = filtered.filter(n => n.category === filterCat);
+    }
+    if (searchVal) {
+      filtered = filtered.filter(n => n.title.toLowerCase().includes(searchVal) || n.text.toLowerCase().includes(searchVal));
+    }
+
+    if (filtered.length === 0) {
+      listContainer.innerHTML = `
+        <div class="notif-empty-state">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-darker)" stroke-width="1.5" style="margin-bottom: 0.5rem;"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <p>No notifications found</p>
+        </div>
+      `;
+      return;
+    }
+
+    listContainer.innerHTML = filtered.map(n => {
+      const timeStr = this.formatTimeAgo(n.timestamp);
+      return `
+        <li class="notif-item ${n.read ? 'read' : 'unread'}" data-id="${n.id}" style="display: flex; flex-direction: column;">
+          <div class="notif-item-header">
+            <span class="notif-item-category-tag cat-${n.category}">${n.category}</span>
+            <span class="notif-item-time">${timeStr}</span>
+          </div>
+          <div class="notif-item-body">
+            <h4 class="notif-item-title">${n.title}</h4>
+            <p class="notif-item-text">${n.text}</p>
+          </div>
+          <div class="notif-item-actions">
+            ${!n.read ? `<button type="button" class="btn-notif-action mark-read-btn" title="Mark as read"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg></button>` : ''}
+            <button type="button" class="btn-notif-action delete-btn" title="Delete"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+          </div>
+        </li>
+      `;
+    }).join('');
+
+    // Attach list action listeners
+    listContainer.querySelectorAll('.mark-read-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const li = btn.closest('.notif-item');
+        const id = li.getAttribute('data-id');
+        await this.markAsRead(id);
+      });
+    });
+
+    listContainer.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const li = btn.closest('.notif-item');
+        const id = li.getAttribute('data-id');
+        await this.deleteNotification(id);
+      });
+    });
+  },
+
+  async markAsRead(id) {
+    const item = state.notifications.find(n => n.id === id);
+    if (item) {
+      item.read = true;
+      await state.db.setSetting('notifications_list', state.notifications);
+      this.renderDropdown();
+      this.updateBellBadge();
+    }
+  },
+
+  async deleteNotification(id) {
+    state.notifications = state.notifications.filter(n => n.id !== id);
+    await state.db.setSetting('notifications_list', state.notifications);
+    this.renderDropdown();
+    this.updateBellBadge();
+  },
+
+  async markAllAsRead() {
+    state.notifications.forEach(n => n.read = true);
+    await state.db.setSetting('notifications_list', state.notifications);
+    this.renderDropdown();
+    this.updateBellBadge();
+  },
+
+  async clearAllRead() {
+    state.notifications = state.notifications.filter(n => !n.read);
+    await state.db.setSetting('notifications_list', state.notifications);
+    this.renderDropdown();
+    this.updateBellBadge();
+  },
+
+  formatTimeAgo(ts) {
+    const diffMs = Date.now() - ts;
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 60) return 'Just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return `${diffHour}h ago`;
+    const diffDay = Math.floor(diffHour / 24);
+    return `${diffDay}d ago`;
+  },
+
+  // Setup re-engagement native scheduling
+  async scheduleReEngagement() {
+    if (!window.Capacitor?.Plugins?.LocalNotifications) return;
+    const prefKey = 'notif_reminders';
+    if (state.notificationPreferences[prefKey] === false) return;
+
+    try {
+      const localNotifs = window.Capacitor.Plugins.LocalNotifications;
+      
+      // Cancel previous scheduled re-engagement notifications to avoid duplicate spam
+      await localNotifs.cancel({
+        notifications: [{ id: 9999 }]
+      });
+
+      // Schedule for 48 hours in the future
+      const triggerTime = new Date(Date.now() + 48 * 60 * 60 * 1000);
+      await localNotifs.schedule({
+        notifications: [
+          {
+            title: "We miss you! 🥺",
+            body: "Keep your habits alive! Check back in to continue your self-improvement quest.",
+            id: 9999,
+            schedule: { at: triggerTime }
+          }
+        ]
+      });
+    } catch (e) {
+      console.error('Failed to schedule re-engagement notification:', e);
+    }
+  },
+
+  // Setup daily habit reminder notifications (Capacitor & Web fallback)
+  async scheduleDailyReminders() {
+    if (state.notificationPreferences.notif_reminders === false) {
+      if (window.Capacitor?.Plugins?.LocalNotifications) {
+        await window.Capacitor.Plugins.LocalNotifications.cancel({ notifications: [{ id: 8888 }] });
+      }
+      return;
+    }
+
+    if (window.Capacitor?.Plugins?.LocalNotifications) {
+      try {
+        const localNotifs = window.Capacitor.Plugins.LocalNotifications;
+        await localNotifs.cancel({ notifications: [{ id: 8888 }] });
+
+        // Schedule daily at 9:00 PM (21:00)
+        const now = new Date();
+        const scheduledTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 21, 0, 0);
+        if (scheduledTime < now) {
+          scheduledTime.setDate(scheduledTime.getDate() + 1);
+        }
+
+        await localNotifs.schedule({
+          notifications: [
+            {
+              title: "Daily Habits Reminder 🔔",
+              body: "Have you completed all your quest objectives today? Mark them complete now!",
+              id: 8888,
+              schedule: {
+                at: scheduledTime,
+                repeats: true,
+                every: 'day'
+              }
+            }
+          ]
+        });
+      } catch (e) {
+        console.error('Failed to schedule daily reminders:', e);
+      }
+    }
+  }
+};
+
+// --- INTERACTIVE ONBOARDING QUEST CARD ---
+async function renderOnboardingGuide() {
+  const container = document.getElementById('onboarding-guide-container');
+  if (!container) return;
+
+  if (!state.onboardingState || state.onboardingState.reward_claimed) {
+    container.style.display = 'none';
+    return;
+  }
+
+  // Calculate dynamic steps progress
+  const createHabitDone = state.habits.length > 0;
+  
+  // Check subtask checkoff
+  const completeSubtaskDone = state.onboardingState.complete_subtask || state.completions.some(c => c.subTasksChecked && c.subTasksChecked.length > 0);
+  
+  const writeJournalDone = state.notes.length > 0;
+  
+  const completeHabitDone = state.completions.some(c => c.completed);
+
+  // Update onboardingState if changed
+  let changed = false;
+  if (state.onboardingState.create_habit !== createHabitDone) {
+    state.onboardingState.create_habit = createHabitDone;
+    changed = true;
+  }
+  if (state.onboardingState.complete_subtask !== completeSubtaskDone) {
+    state.onboardingState.complete_subtask = completeSubtaskDone;
+    changed = true;
+  }
+  if (state.onboardingState.write_journal !== writeJournalDone) {
+    state.onboardingState.write_journal = writeJournalDone;
+    changed = true;
+  }
+  if (state.onboardingState.complete_habit !== completeHabitDone) {
+    state.onboardingState.complete_habit = completeHabitDone;
+    changed = true;
+  }
+
+  if (changed) {
+    await state.db.setSetting('onboarding_state', state.onboardingState);
+  }
+
+  // Calculate completed steps
+  let completedCount = 0;
+  if (state.onboardingState.create_habit) completedCount++;
+  if (state.onboardingState.complete_subtask) completedCount++;
+  if (state.onboardingState.write_journal) completedCount++;
+  if (state.onboardingState.complete_habit) completedCount++;
+
+  const progressPercent = (completedCount / 4) * 100;
+
+  container.style.display = 'block';
+
+  container.innerHTML = `
+    <div class="onboarding-header">
+      <div class="onboarding-title-group">
+        <h3>🚀 Onboarding Quest</h3>
+        <span class="onboarding-badge">+50 XP</span>
+      </div>
+      <button type="button" class="onboarding-dismiss-btn" id="btn-onboarding-dismiss" title="Dismiss Guide">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+
+    <div class="onboarding-progress-wrapper">
+      <div class="onboarding-progress-info">
+        <span>Quest Progress</span>
+        <span>${completedCount} / 4 Steps</span>
+      </div>
+      <div class="onboarding-progress-bar">
+        <div class="onboarding-progress-fill" style="width: ${progressPercent}%;"></div>
+      </div>
+    </div>
+
+    <ul class="onboarding-steps-list">
+      <li class="onboarding-step-item ${state.onboardingState.create_habit ? 'completed' : ''}">
+        <div class="onboarding-step-checkbox">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </div>
+        <div class="onboarding-step-info">
+          <div class="onboarding-step-title">Create a Habit</div>
+          <div class="onboarding-step-desc">Add a custom habit to your daily quest board.</div>
+        </div>
+      </li>
+      <li class="onboarding-step-item ${state.onboardingState.complete_subtask ? 'completed' : ''}">
+        <div class="onboarding-step-checkbox">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </div>
+        <div class="onboarding-step-info">
+          <div class="onboarding-step-title">Complete a Checklist Subtask</div>
+          <div class="onboarding-step-desc">Add a subtask to a habit checklist and check it off.</div>
+        </div>
+      </li>
+      <li class="onboarding-step-item ${state.onboardingState.write_journal ? 'completed' : ''}">
+        <div class="onboarding-step-checkbox">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </div>
+        <div class="onboarding-step-info">
+          <div class="onboarding-step-title">Log a Journal Reflection Note</div>
+          <div class="onboarding-step-desc">Write down notes in the Notion-style journal workspace.</div>
+        </div>
+      </li>
+      <li class="onboarding-step-item ${state.onboardingState.complete_habit ? 'completed' : ''}">
+        <div class="onboarding-step-checkbox">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </div>
+        <div class="onboarding-step-info">
+          <div class="onboarding-step-title">Check Off a Habit</div>
+          <div class="onboarding-step-desc">Mark a daily habit as complete on your agenda list.</div>
+        </div>
+      </li>
+    </ul>
+
+    ${completedCount === 4 ? `
+      <button type="button" class="onboarding-claim-btn" id="btn-onboarding-claim">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+        Claim Quest Reward (+50 XP)
+      </button>
+    ` : ''}
+  `;
+
+  // Attach event listeners
+  const dismissBtn = container.querySelector('#btn-onboarding-dismiss');
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', async () => {
+      state.onboardingState.reward_claimed = true;
+      await state.db.setSetting('onboarding_state', state.onboardingState);
+      container.style.display = 'none';
+      AppNotifications.sendImmediate('Guide Dismissed', 'You can view tips anytime in Settings.', 'guidance');
+    });
+  }
+
+  const claimBtn = container.querySelector('#btn-onboarding-claim');
+  if (claimBtn) {
+    claimBtn.addEventListener('click', async () => {
+      claimBtn.disabled = true;
+      state.onboardingState.reward_claimed = true;
+      await state.db.setSetting('onboarding_state', state.onboardingState);
+      container.style.display = 'none';
+
+      state.audio.playAchievement();
+      confetti({
+        particleCount: 150,
+        spread: 85,
+        colors: ['#6366f1', '#8b5cf6', '#10b981', '#fff'],
+        origin: { y: 0.6 }
+      });
+
+      await awardXP(50);
+      AppNotifications.sendImmediate('Quest Completed! 🎉', 'Onboarding guide completed successfully. Gained +50 XP reward!', 'success');
+    });
+  }
+}
+
+function refreshNotificationPreferencesUI() {
+  const notifToggle = document.getElementById('setting-notif-toggle');
+  const panel = document.getElementById('notifications-subpreferences-panel');
+  if (!notifToggle) return;
+
+  state.db.getSetting('notifications_enabled', false).then(enabled => {
+    notifToggle.checked = enabled;
+    if (panel) {
+      panel.style.display = enabled ? 'flex' : 'none';
+    }
+  });
+
+  const prefKeys = ['reminders', 'streaks', 'success', 'guidance', 'audio'];
+  prefKeys.forEach(k => {
+    const el = document.getElementById(`setting-notif-${k}`);
+    if (el) {
+      el.checked = state.notificationPreferences[`notif_${k}`] !== false;
+    }
+  });
+}
+
 async function initNotifications() {
   const notifToggle = document.getElementById('setting-notif-toggle');
   const testBtn = document.getElementById('btn-test-notif');
+  const panel = document.getElementById('notifications-subpreferences-panel');
   
-  if (!notifToggle || !testBtn) return;
+  if (!notifToggle) return;
   
   const enabled = await state.db.getSetting('notifications_enabled', false);
   notifToggle.checked = enabled;
+  if (panel) {
+    panel.style.display = enabled ? 'flex' : 'none';
+  }
+
+  // Set initial preferences states
+  const prefKeys = ['reminders', 'streaks', 'success', 'guidance', 'audio'];
+  prefKeys.forEach(k => {
+    const el = document.getElementById(`setting-notif-${k}`);
+    if (el) {
+      el.checked = state.notificationPreferences[`notif_${k}`] !== false;
+    }
+  });
   
   notifToggle.addEventListener('change', async () => {
     if (notifToggle.checked) {
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
+      const permission = await AppNotifications.requestPermission();
+      if (permission) {
         await state.db.setSetting('notifications_enabled', true);
+        if (panel) panel.style.display = 'flex';
         showNotification('🔔 Smart Notifications Activated!', '#10b981');
-        sendLocalPushNotification('Notifications Enabled!', 'You will now receive reminders for pending habits.');
+        AppNotifications.sendImmediate('Notifications Enabled!', 'You will now receive alerts and reminders.', 'system');
+        await AppNotifications.scheduleDailyReminders();
+        await AppNotifications.scheduleReEngagement();
       } else {
         notifToggle.checked = false;
+        if (panel) panel.style.display = 'none';
         showNotification('⚠️ Permission Denied!', '#f43f5e');
       }
     } else {
       await state.db.setSetting('notifications_enabled', false);
+      if (panel) panel.style.display = 'none';
       showNotification('Notifications Disabled.', 'rgba(255,255,255,0.3)');
+      // Cancel scheduled notifications
+      if (window.Capacitor?.Plugins?.LocalNotifications) {
+        await window.Capacitor.Plugins.LocalNotifications.cancel({
+          notifications: [{ id: 8888 }, { id: 9999 }]
+        });
+      }
+    }
+  });
+
+  // Bind individual toggles
+  prefKeys.forEach(k => {
+    const el = document.getElementById(`setting-notif-${k}`);
+    if (el) {
+      el.addEventListener('change', async () => {
+        await AppNotifications.savePreference(`notif_${k}`, el.checked);
+        if (k === 'reminders') {
+          await AppNotifications.scheduleDailyReminders();
+        }
+      });
     }
   });
   
-  testBtn.addEventListener('click', () => {
-    sendLocalPushNotification('🔔 Habit Reminder Test!', 'Your daily habits are ready. Keep your streaks alive today!');
-  });
+  if (testBtn) {
+    testBtn.addEventListener('click', async () => {
+      // Pick or mock a habit name
+      const habitNames = state.habits.length > 0
+        ? state.habits.filter(h => !h.isDeleted && !h.isArchived).map(h => h.name)
+        : ['DSA Coding Practice', 'Hydration Protocol', 'Skincare Routine', 'Budget Tracking'];
+      const habitName = habitNames[Math.floor(Math.random() * habitNames.length)];
+      
+      const randomStreak = Math.floor(Math.random() * 14) + 2; // e.g. 2 to 15 days
+      const typicalHours = [8, 14, 17, 20];
+      const typicalHour = typicalHours[Math.floor(Math.random() * typicalHours.length)];
+      const typicalTimeStr = (typicalHour % 12 || 12) + (typicalHour >= 12 ? ' PM' : ' AM');
+
+      const testScenarios = [
+        // 1. Streak Dying Warning
+        {
+          title: "Streak At Risk! ⚠️🔥",
+          body: [
+            `Don't let our 🔥 ${randomStreak} day streak die! I promise I won't bite... unless you want me to. 😏`,
+            `You're about to lose your 🔥 ${randomStreak} day streak for "${habitName}". Are you always this quick to abandon things? 💅`,
+            `Your streak for "${habitName}" is dying today. Please save it, I can't bear to see you fail. 🥺`,
+            `That 🔥 ${randomStreak} day streak was the only impressive thing about you. Don't let it die! 💀`,
+            `Are you ignoring "${habitName}" or just playing hard to get? Because your streak is crying right now. 😢`,
+            `Oh, so we're just throwing away our 🔥 ${randomStreak} day streak? Who hurt you? 💔`,
+            `Don't let your 🔥 ${randomStreak} day streak for "${habitName}" become history. Unless you like failing? 🙄`
+          ]
+        },
+        // 2. Typical Time Missed
+        {
+          title: "Neglected Habit Reminder 🙄",
+          body: [
+            `Hey, you usually do "${habitName}" around ${typicalTimeStr}. It's past that time. Did you find a new favorite habit? 🧐`,
+            `It's past your usual "${habitName}" time! Don't tell me you're slacking. I expected more from you. 🙄`,
+            `You usually complete "${habitName}" by now. Did you get distracted by something shiny, or are you just lazy today? 😜`,
+            `Did you forget our date with "${habitName}" at ${typicalTimeStr}? Keeping me waiting is not a good look on you. 💅`,
+            `Is "${habitName}" too hard for you today? You're usually done by ${typicalTimeStr}. Just saying... 😏`
+          ]
+        },
+        // 3. General Sarcastic Roast
+        {
+          title: "Neglected Habit Reminder 🙄",
+          body: [
+            `Hey gorgeous, did you forget about "${habitName}"? Or are you just trying to get me to chase you? 😉`,
+            `I got a notification saying someone extremely attractive is neglecting "${habitName}". Oh wait, it's you. 😘`,
+            `I miss you more than tea misses sugar. Come complete "${habitName}" already! ☕`,
+            `Our relationship with "${habitName}" is getting complicated. Complete it soon? 🥺`,
+            `My heart skips a beat when you skip "${habitName}". Complete it for me? 💓`,
+            `No pressure, but "${habitName}" has been waiting for you all day. Don't stand it up! ⏳`,
+            `Are you a magician? Because every time I check "${habitName}", you make it disappear! ✨`,
+            `Is it just me, or does "${habitName}" look extra attractive when you actually do it? 😏`,
+            `Hey! I'm not jealous, but "${habitName}" is getting all my attention today. Care to check it off? 😜`,
+            `Are you practicing being useless, or is "${habitName}" just too hard for your single brain cell? 🧠`,
+            `They say consistency is key, but clearly, you prefer locked doors. Do "${habitName}" already! 🔑`,
+            `I'd roast you for skipping "${habitName}", but life seems to have done that for me. Oof. 💀`
+          ]
+        }
+      ];
+
+      // Select random scenario and random text from it
+      const scenario = testScenarios[Math.floor(Math.random() * testScenarios.length)];
+      const text = scenario.body[Math.floor(Math.random() * scenario.body.length)];
+
+      showNotification("Test Alert scheduled in 3 seconds! Close the app or lock your screen to see it. 🤫", "linear-gradient(135deg, #8b5cf6, #10b981)");
+
+      // Send immediate in-app toast log record so it appears in history
+      const notifItem = {
+        id: Date.now() + '-' + Math.round(Math.random() * 1000),
+        title: scenario.title,
+        text: text,
+        category: 'reminder',
+        timestamp: Date.now(),
+        read: false
+      };
+      state.notifications.unshift(notifItem);
+      if (state.notifications.length > 100) {
+        state.notifications = state.notifications.slice(0, 100);
+      }
+      await state.db.setSetting('notifications_list', state.notifications);
+      AppNotifications.renderDropdown();
+      AppNotifications.updateBellBadge();
+
+      // Trigger actual native push notification 3 seconds later
+      if (window.DnDAndroid && typeof window.DnDAndroid.showLocalNotification === 'function') {
+        setTimeout(() => {
+          try {
+            window.DnDAndroid.showLocalNotification(scenario.title, text);
+          } catch (e) {}
+        }, 3000);
+      } else if (window.Capacitor?.Plugins?.LocalNotifications) {
+        try {
+          await window.Capacitor.Plugins.LocalNotifications.schedule({
+            notifications: [
+              {
+                title: scenario.title,
+                body: text,
+                id: 7777,
+                schedule: { at: new Date(Date.now() + 3000) }
+              }
+            ]
+          });
+        } catch (e) {}
+      } else if ('Notification' in window && Notification.permission === 'granted') {
+        setTimeout(() => {
+          new Notification(scenario.title, { body: text });
+        }, 3000);
+      }
+    });
+  }
+
+  // Update bell badge on boot
+  AppNotifications.updateBellBadge();
+
+  // Schedule daily reminders and re-engagement on boot if enabled
+  const isNotifEnabled = await state.db.getSetting('notifications_enabled', false);
+  if (isNotifEnabled) {
+    await AppNotifications.scheduleDailyReminders();
+    await AppNotifications.scheduleReEngagement();
+  }
 
   // Check and send sarcastic reminders for neglected habits daily
   await checkSarcasticHabitReminders();
 }
 
-function sendLocalPushNotification(title, body) {
-  if (!('Notification' in window)) return;
-  if (Notification.permission === 'granted') {
-    new Notification(title, {
-      body: body,
-      icon: 'favicon.ico'
-    });
-  }
-}
-
 async function checkSarcasticHabitReminders() {
+  const isNotifEnabled = await state.db.getSetting('notifications_enabled', false);
+  if (!isNotifEnabled) return;
+
   const todayStr = new Date().toISOString().split('T')[0];
   const activeHabits = state.habits.filter(h => !h.isArchived && !h.isDeleted && !h.isHidden);
   
-  let countTriggered = 0;
-  
   for (const h of activeHabits) {
-    if (countTriggered >= 3) break; // Limit to 3 max reminders per day
+    const completedToday = state.completions.some(c => c.habitId === h.id && c.completed && c.date === todayStr);
     
-    // Check if habit has 0 completions in state.completions
-    const hasCompletions = state.completions.some(c => c.habitId === h.id && c.completed);
-    if (hasCompletions) continue;
-    
+    if (completedToday) {
+      // Cancel scheduled notifications for this habit
+      await cancelHabitNotifications(h.id);
+      continue;
+    }
+
     // Calculate elapsed days since creation
     const createdTime = h.createdTime || Date.now();
     const elapsedDays = Math.floor((Date.now() - createdTime) / (24 * 60 * 60 * 1000));
     if (elapsedDays < 1) continue; // Must be at least 1 day old
-    
-    // Check if we already sent a sarcastic notification for this habit today
-    const lastSentKey = `sarcastic_notif_sent_${h.id}`;
-    const lastSentDate = await state.db.getSetting(lastSentKey, null);
-    if (lastSentDate === todayStr) continue; // Already sent today
-    
-    // Record that we are sending it today
-    await state.db.setSetting(lastSentKey, todayStr);
-    
-    // Stagger multiple notifications with a 4.5s delay
-    const delay = countTriggered * 4500;
-    countTriggered++;
-    
-    setTimeout(() => {
-      const nthTime = elapsedDays + 1;
-      const getOrdinal = (num) => {
-        const j = num % 10;
-        const k = num % 100;
-        if (j === 1 && k !== 11) return num + "st";
-        if (j === 2 && k !== 12) return num + "nd";
-        if (j === 3 && k !== 13) return num + "rd";
-        return num + "th";
-      };
-      
-      const reminders = [
-        `🙄 This is Day 1 for the ${getOrdinal(nthTime)} time for "${h.name}".`,
-        `Hey gorgeous, did you forget about "${h.name}"? Or are you just trying to get me to chase you? 😉`,
-        `I got a notification saying someone extremely attractive is neglecting "${h.name}". Oh wait, it's you. 😘`,
-        `I miss you more than tea misses sugar. Come complete "${h.name}" already! ☕`,
-        `Our relationship with "${h.name}" is getting complicated. Complete it soon? 🥺`,
-        `My heart skips a beat when you skip "${h.name}". Complete it for me? 💓`,
-        `No pressure, but "${h.name}" has been waiting for you all day. Don't stand it up! ⏳`,
-        `Are you a magician? Because every time I check "${h.name}", you make it disappear! ✨`,
-        `Is it just me, or does "${h.name}" look extra attractive when you actually do it? 😏`,
-        `Hey! I'm not jealous, but "${h.name}" is getting all my attention today. Care to check it off? 😜`
-      ];
-      
-      const selectedText = reminders[Math.floor(Math.random() * reminders.length)];
-      
-      // Show in-app premium toast
-      showNotification(selectedText, 'linear-gradient(135deg, #ec4899, #db2777)');
-      
-      // Trigger desktop push notification if enabled
-      sendLocalPushNotification('A little reminder... 😉', selectedText);
-    }, delay);
+
+    if (window.Capacitor?.Plugins?.LocalNotifications) {
+      try {
+        const localNotifs = window.Capacitor.Plugins.LocalNotifications;
+        
+        // Ensure high importance channel exists
+        await localNotifs.createChannel({
+          id: 'dnd_high_importance',
+          name: 'DnD Reminders',
+          description: 'Habit check-in reminders and warnings',
+          importance: 5, // High importance
+          visibility: 1, // Public (shows on lock screen)
+          vibration: true
+        });
+
+        // Cancel previous scheduled notifications to avoid duplicates
+        await cancelHabitNotifications(h.id);
+
+        const completionsForHabit = state.completions.filter(c => c.habitId === h.id && c.completed);
+        const stats = await state.db.getStreakStats(h.id, completionsForHabit);
+        const streak = stats.currentStreak;
+
+        // 1. Check and Schedule STREAK DYING WARNING
+        if (streak > 0) {
+          const streakDyingTexts = [
+            `Don't let our 🔥 ${streak} day streak die! I promise I won't bite... unless you want me to. 😏`,
+            `You're about to lose your 🔥 ${streak} day streak for "${h.name}". Are you always this quick to abandon things? 💅`,
+            `Your streak for "${h.name}" is dying today. Please save it, I can't bear to see you fail. 🥺`,
+            `That 🔥 ${streak} day streak was the only impressive thing about you. Don't let it die! 💀`,
+            `Are you ignoring "${h.name}" or just playing hard to get? Because your streak is crying right now. 😢`,
+            `Oh, so we're just throwing away our 🔥 ${streak} day streak? Who hurt you? 💔`,
+            `Don't let your 🔥 ${streak} day streak for "${h.name}" become history. Unless you like failing? 🙄`
+          ];
+          const selectedStreakText = streakDyingTexts[Math.floor(Math.random() * streakDyingTexts.length)];
+
+          const streakTarget = new Date();
+          streakTarget.setHours(20, 30, 0, 0); // 8:30 PM
+          if (streakTarget < new Date()) {
+            // If already past 8:30 PM, schedule for tomorrow
+            streakTarget.setDate(streakTarget.getDate() + 1);
+          }
+
+          await localNotifs.schedule({
+            notifications: [
+              {
+                title: "Streak At Risk! ⚠️🔥",
+                body: selectedStreakText,
+                id: h.id + 100000,
+                channelId: 'dnd_high_importance',
+                schedule: { at: streakTarget }
+              }
+            ]
+          });
+        }
+
+        // 2. Schedule Typical Time Missed OR General Sarcastic Reminder
+        let typicalHour = null;
+        if (completionsForHabit.length >= 2) {
+          const hours = completionsForHabit.map(c => c.completionHour).filter(hr => hr !== undefined);
+          if (hours.length > 0) {
+            const count = {};
+            let maxCount = 0;
+            let modeHour = hours[0];
+            hours.forEach(hr => {
+              count[hr] = (count[hr] || 0) + 1;
+              if (count[hr] > maxCount) {
+                maxCount = count[hr];
+                modeHour = hr;
+              }
+            });
+            typicalHour = modeHour;
+          }
+        }
+
+        let reminderBody = '';
+        let targetTime = new Date();
+
+        if (typicalHour !== null) {
+          // Schedule tomorrow at typicalHour
+          targetTime.setDate(targetTime.getDate() + 1);
+          targetTime.setHours(typicalHour, 0, 0, 0);
+
+          const typicalTimeStr = (typicalHour % 12 || 12) + (typicalHour >= 12 ? ' PM' : ' AM');
+          const typicalTexts = [
+            `Hey, you usually do "${h.name}" around ${typicalTimeStr}. It's past that time. Did you find a new favorite habit? 🧐`,
+            `It's past your usual "${h.name}" time! Don't tell me you're slacking. I expected more from you. 🙄`,
+            `You usually complete "${h.name}" by now. Did you get distracted by something shiny, or are you just lazy today? 😜`,
+            `Did you forget our date with "${h.name}" at ${typicalTimeStr}? Keeping me waiting is not a good look on you. 💅`,
+            `Is "${h.name}" too hard for you today? You're usually done by ${typicalTimeStr}. Just saying... 😏`
+          ];
+          reminderBody = typicalTexts[Math.floor(Math.random() * typicalTexts.length)];
+        } else {
+          // General sarcastic / flirty roast
+          targetTime.setDate(targetTime.getDate() + 1);
+          targetTime.setHours(18, 0, 0, 0); // 6:00 PM
+
+          const getOrdinal = (num) => {
+            const j = num % 10;
+            const k = num % 100;
+            if (j === 1 && k !== 11) return num + "st";
+            if (j === 2 && k !== 12) return num + "nd";
+            if (j === 3 && k !== 13) return num + "rd";
+            return num + "th";
+          };
+          const nthTime = elapsedDays + 1;
+          const generalTexts = [
+            `🙄 This is Day 1 for the ${getOrdinal(nthTime)} time for "${h.name}".`,
+            `Hey gorgeous, did you forget about "${h.name}"? Or are you just trying to get me to chase you? 😉`,
+            `I got a notification saying someone extremely attractive is neglecting "${h.name}". Oh wait, it's you. 😘`,
+            `I miss you more than tea misses sugar. Come complete "${h.name}" already! ☕`,
+            `Our relationship with "${h.name}" is getting complicated. Complete it soon? 🥺`,
+            `My heart skips a beat when you skip "${h.name}". Complete it for me? 💓`,
+            `No pressure, but "${h.name}" has been waiting for you all day. Don't stand it up! ⏳`,
+            `Are you a magician? Because every time I check "${h.name}", you make it disappear! ✨`,
+            `Is it just me, or does "${h.name}" look extra attractive when you actually do it? 😏`,
+            `Hey! I'm not jealous, but "${h.name}" is getting all my attention today. Care to check it off? 😜`,
+            `Are you practicing being useless, or is "${h.name}" just too hard for your single brain cell? 🧠`,
+            `They say consistency is key, but clearly, you prefer locked doors. Do "${h.name}" already! 🔑`,
+            `I'd roast you for skipping "${h.name}", but life seems to have done that for me. Oof. 💀`
+          ];
+          reminderBody = generalTexts[Math.floor(Math.random() * generalTexts.length)];
+        }
+
+        await localNotifs.schedule({
+          notifications: [
+            {
+              title: "Neglected Habit Reminder 🙄",
+              body: reminderBody,
+              id: h.id,
+              channelId: 'dnd_high_importance',
+              schedule: { at: targetTime }
+            }
+          ]
+        });
+
+      } catch (e) {
+        console.error('Failed to schedule local notification:', e);
+      }
+    }
   }
 }
 
@@ -5228,10 +7597,51 @@ function getEmojiHex(emoji) {
   return codePoints.length > 0 ? codePoints.join('-') : '1f4c4';
 }
 
-// Generate beautiful Twemoji 2D flat icon PNG URL
+// Generate beautiful Twemoji 2D flat icon PNG URL (habits modal only — notes use native emoji)
 function getTwemojiUrl(emoji) {
   const hex = getEmojiHex(emoji || '📄');
   return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${hex}.png`;
+}
+
+// Notion-style native emoji renderer (no CDN images — works offline on all devices)
+function setNativeEmoji(el, emoji, sizePx = 24) {
+  if (!el) return;
+  const em = emoji || '📄';
+  el.innerHTML = '';
+  el.classList.add('notion-emoji');
+  el.style.fontSize = `${sizePx}px`;
+  el.style.lineHeight = '1';
+  el.style.display = 'inline-flex';
+  el.style.alignItems = 'center';
+  el.style.justifyContent = 'center';
+  el.textContent = em;
+  el.setAttribute('aria-label', em);
+}
+
+function isNotesMobileView() {
+  return window.matchMedia('(max-width: 900px)').matches;
+}
+
+function positionNotesPopover(picker, triggerEl) {
+  if (isNotesMobileView()) {
+    picker.classList.add('notes-popover-sheet');
+    picker.style.position = 'fixed';
+    picker.style.bottom = '0';
+    picker.style.left = '0';
+    picker.style.right = '0';
+    picker.style.top = 'auto';
+    picker.style.width = '100%';
+    picker.style.maxWidth = '100%';
+    picker.style.maxHeight = '72vh';
+    picker.style.borderRadius = '20px 20px 0 0';
+    picker.style.zIndex = '6000';
+    document.body.appendChild(picker);
+    return;
+  }
+  const rect = triggerEl.getBoundingClientRect();
+  picker.style.top = `${rect.bottom + window.scrollY + 6}px`;
+  picker.style.left = `${Math.min(rect.left + window.scrollX, window.innerWidth - 300)}px`;
+  document.body.appendChild(picker);
 }
 
 let notesAutoSaveTimeout = null;
@@ -5367,9 +7777,24 @@ function initNotesWorkspace() {
         state.notesVaultUnlocked = false;
       }
       
+      state.activeNoteId = null; // deselect note when switching folders
       renderNotesView();
+      loadActiveNoteIntoEditor();
     };
   });
+
+  // Helper to close more actions dropdown
+  function closeMoreDropdown() {
+    const moreDropdown = document.getElementById('note-more-dropdown');
+    const moreTrigger = document.getElementById('btn-note-more-trigger');
+    if (moreDropdown) {
+      moreDropdown.classList.remove('active');
+      if (moreTrigger) moreTrigger.classList.remove('active');
+      if (moreDropdown.parentElement === document.body) {
+        document.getElementById('note-more-menu-container')?.appendChild(moreDropdown);
+      }
+    }
+  }
 
   // Header controls action listeners
   const btnPin = document.getElementById('btn-note-pin-active');
@@ -5381,9 +7806,11 @@ function initNotesWorkspace() {
         note.isFavorite = !note.isFavorite;
         await state.db.updateNote(note);
         state.notes = await state.db.getNotes(true);
+        state.activeNoteId = null; // deselect and redirect back to list
         renderNotesView();
         loadActiveNoteIntoEditor();
         showNotification(note.isFavorite ? 'Page pinned to Favorites! 📌' : 'Page unpinned.', '#f59e0b');
+        closeMoreDropdown();
       }
     });
   }
@@ -5404,6 +7831,7 @@ function initNotesWorkspace() {
         renderNotesView();
         loadActiveNoteIntoEditor();
         showNotification(note.isArchived ? 'Page archived successfully! 📥' : 'Page unarchived.', '#d97706');
+        closeMoreDropdown();
       }
     });
   }
@@ -5424,7 +7852,7 @@ function initNotesWorkspace() {
           }
           try {
             showNotification('ℹ️ Please verify your device credentials (PIN/Fingerprint) to continue.', '#3b82f6');
-            await verifyDeviceOwner();
+            await window.verifyDeviceOwner();
           } catch (e) {
             showNotification(`❌ Setup failed: ${e.message}`, '#f43f5e');
             return;
@@ -5444,6 +7872,7 @@ function initNotesWorkspace() {
         renderNotesView();
         loadActiveNoteIntoEditor();
         showNotification(note.isHidden ? 'Page hidden in Secure Vault! 🔒' : 'Page unhidden.', '#818cf8');
+        closeMoreDropdown();
       }
     });
   }
@@ -5462,6 +7891,7 @@ function initNotesWorkspace() {
         renderNotesView();
         loadActiveNoteIntoEditor();
         showNotification('Page moved to Trash!', '#be123c');
+        closeMoreDropdown();
       }
     });
   }
@@ -5854,6 +8284,11 @@ function initNotesWorkspace() {
       e.stopPropagation();
       const isActive = moreDropdown.classList.toggle('active');
       moreTrigger.classList.toggle('active', isActive);
+      if (isActive && isNotesMobileView()) {
+        document.body.appendChild(moreDropdown);
+      } else if (!isActive && moreDropdown.parentElement === document.body) {
+        document.getElementById('note-more-menu-container')?.appendChild(moreDropdown);
+      }
       if (styleDropdown) {
         styleDropdown.classList.remove('active');
         if (styleTrigger) styleTrigger.classList.remove('active');
@@ -5870,6 +8305,9 @@ function initNotesWorkspace() {
     if (moreDropdown && moreTrigger && !moreDropdown.contains(e.target) && e.target !== moreTrigger && !moreTrigger.contains(e.target)) {
       moreDropdown.classList.remove('active');
       moreTrigger.classList.remove('active');
+      if (moreDropdown.parentElement === document.body) {
+        document.getElementById('note-more-menu-container')?.appendChild(moreDropdown);
+      }
     }
   });
 
@@ -5989,6 +8427,8 @@ function initPremiumNotesUpgrades() {
     themeTrigger.addEventListener('click', () => {
       themeOverlay.style.display = themeOverlay.style.display === 'none' ? 'block' : 'none';
       closeOtherOverlays('theme-overlay');
+      const styleDropdown = document.getElementById('note-style-dropdown');
+      const styleTrigger = document.getElementById('btn-note-style-trigger');
       if (styleDropdown) styleDropdown.classList.remove('active');
       if (styleTrigger) styleTrigger.classList.remove('active');
     });
@@ -6015,6 +8455,7 @@ function initPremiumNotesUpgrades() {
     if (!note) return;
 
     note.presetTheme = preset;
+    note.customWallpaper = ''; // Clear custom wallpaper so preset overrides it
     debouncedSaveNote(note);
     renderPresetThemeDOM(note);
 
@@ -6031,6 +8472,11 @@ function initPremiumNotesUpgrades() {
         card.classList.remove('active');
       }
     });
+
+    // Automatically redirect back to notes page by closing overlay
+    if (themeOverlay) {
+      themeOverlay.style.display = 'none';
+    }
   }
 
   function renderPresetThemeDOM(note) {
@@ -6143,9 +8589,15 @@ function initPremiumNotesUpgrades() {
         const note = state.notes.find(n => n.id === state.activeNoteId);
         if (note) {
           note.customWallpaper = reader.result;
+          note.presetTheme = ''; // Clear preset theme so custom wallpaper overrides it
           renderPresetThemeDOM(note);
           debouncedSaveNote(note);
           showNotification('Wallpaper applied successfully! 🖼️', '#10b981');
+          
+          // Automatically redirect back to notes page by closing overlay
+          if (themeOverlay) {
+            themeOverlay.style.display = 'none';
+          }
         }
       };
       reader.readAsDataURL(file);
@@ -6177,6 +8629,7 @@ function initPremiumNotesUpgrades() {
   // Custom Lasso selection attributes
   let lassoPoints = [];
   let lassoSelectedImage = null;
+  let lassoBaseCanvas = null;
   let lassoImageX = 0;
   let lassoImageY = 0;
   let isLassoDrawing = false;
@@ -6219,6 +8672,7 @@ function initPremiumNotesUpgrades() {
     surfaceStrokesHistory = [];
     surfaceRedoHistory = [];
     lassoSelectedImage = null;
+    lassoBaseCanvas = null;
 
     if (note && note.drawingsDataUrl) {
       const img = new Image();
@@ -6236,9 +8690,13 @@ function initPremiumNotesUpgrades() {
   // Helper to save canvas snapshot to undo history
   function pushSurfaceCanvasState() {
     if (!surfaceCanvas) return;
-    if (surfaceStrokesHistory.length > 30) surfaceStrokesHistory.shift(); // Limit to 30 undos
-    surfaceStrokesHistory.push(surfaceCanvas.toDataURL());
-    surfaceRedoHistory = []; // Clear redo stack on new action
+    const currentState = surfaceCanvas.toDataURL();
+    const lastState = surfaceStrokesHistory[surfaceStrokesHistory.length - 1];
+    if (currentState !== lastState) {
+      if (surfaceStrokesHistory.length > 30) surfaceStrokesHistory.shift(); // Limit to 30 undos
+      surfaceStrokesHistory.push(currentState);
+      surfaceRedoHistory = []; // Clear redo stack on new action
+    }
   }
 
   // Trigger Direct Draw Mode
@@ -6253,6 +8711,10 @@ function initPremiumNotesUpgrades() {
       
       if (surfaceStrokesHistory.length === 0) {
         surfaceStrokesHistory.push(surfaceCanvas.toDataURL());
+      }
+      
+      if (window.lucide) {
+        window.lucide.createIcons({ scope: directDrawDock });
       }
       
       showNotification('Direct drawing mode active! Draw on top of any elements 🎨', '#818cf8');
@@ -6310,6 +8772,11 @@ function initPremiumNotesUpgrades() {
         
         isLassoDrawing = true;
         lassoPoints = [{ x: pos.x, y: pos.y }];
+        pushSurfaceCanvasState();
+        lassoBaseCanvas = document.createElement('canvas');
+        lassoBaseCanvas.width = surfaceCanvas.width;
+        lassoBaseCanvas.height = surfaceCanvas.height;
+        lassoBaseCanvas.getContext('2d').drawImage(surfaceCanvas, 0, 0);
         e.preventDefault();
         return;
       }
@@ -6399,7 +8866,6 @@ function initPremiumNotesUpgrades() {
     const stopSurfaceDraw = () => {
       if (isLassoMoving) {
         isLassoMoving = false;
-        pushSurfaceCanvasState();
         return;
       }
       
@@ -6441,6 +8907,13 @@ function initPremiumNotesUpgrades() {
     offscreen.height = h;
     const offCtx = offscreen.getContext('2d');
     
+    if (!lassoBaseCanvas) {
+      lassoBaseCanvas = document.createElement('canvas');
+      lassoBaseCanvas.width = surfaceCanvas.width;
+      lassoBaseCanvas.height = surfaceCanvas.height;
+      lassoBaseCanvas.getContext('2d').drawImage(surfaceCanvas, 0, 0);
+    }
+    
     offCtx.save();
     offCtx.beginPath();
     offCtx.moveTo(lassoPoints[0].x - minX, lassoPoints[0].y - minY);
@@ -6449,32 +8922,46 @@ function initPremiumNotesUpgrades() {
     }
     offCtx.closePath();
     offCtx.clip();
-    offCtx.drawImage(surfaceCanvas, -minX, -minY);
+    offCtx.drawImage(lassoBaseCanvas, -minX, -minY);
     offCtx.restore();
     
-    surfaceCtx.save();
-    surfaceCtx.beginPath();
-    surfaceCtx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
+    const baseCtx = lassoBaseCanvas.getContext('2d');
+    baseCtx.save();
+    baseCtx.beginPath();
+    baseCtx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
     for (let i = 1; i < lassoPoints.length; i++) {
-      surfaceCtx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
+      baseCtx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
     }
-    surfaceCtx.closePath();
-    surfaceCtx.globalCompositeOperation = 'destination-out';
-    surfaceCtx.fill();
-    surfaceCtx.restore();
+    baseCtx.closePath();
+    baseCtx.globalCompositeOperation = 'destination-out';
+    baseCtx.fill();
+    baseCtx.restore();
     
     lassoSelectedImage = offscreen;
     lassoImageX = minX;
     lassoImageY = minY;
     
-    pushSurfaceCanvasState();
     redrawCanvasWithFloatingLasso();
     showNotification('Region cut! Drag it to move or click Done to drop ✂️', '#a855f7');
   }
 
-  function redrawCanvasWithFloatingLasso() {
+  function redrawCanvasWithFloatingLasso(drawDashedBorder = true) {
     if (!surfaceCanvas || !surfaceCtx) return;
-    if (surfaceStrokesHistory.length > 0) {
+    if (lassoBaseCanvas) {
+      surfaceCtx.clearRect(0, 0, surfaceCanvas.width, surfaceCanvas.height);
+      surfaceCtx.drawImage(lassoBaseCanvas, 0, 0);
+      if (lassoSelectedImage) {
+        surfaceCtx.save();
+        surfaceCtx.drawImage(lassoSelectedImage, lassoImageX, lassoImageY);
+        if (drawDashedBorder) {
+          surfaceCtx.setLineDash([4, 4]);
+          surfaceCtx.strokeStyle = '#a855f7';
+          surfaceCtx.lineWidth = 1;
+          surfaceCtx.strokeRect(lassoImageX, lassoImageY, lassoSelectedImage.width, lassoSelectedImage.height);
+        }
+        surfaceCtx.restore();
+      }
+    } else if (surfaceStrokesHistory.length > 0) {
       const img = new Image();
       img.onload = () => {
         surfaceCtx.clearRect(0, 0, surfaceCanvas.width, surfaceCanvas.height);
@@ -6482,10 +8969,12 @@ function initPremiumNotesUpgrades() {
         if (lassoSelectedImage) {
           surfaceCtx.save();
           surfaceCtx.drawImage(lassoSelectedImage, lassoImageX, lassoImageY);
-          surfaceCtx.setLineDash([4, 4]);
-          surfaceCtx.strokeStyle = '#a855f7';
-          surfaceCtx.lineWidth = 1;
-          surfaceCtx.strokeRect(lassoImageX, lassoImageY, lassoSelectedImage.width, lassoSelectedImage.height);
+          if (drawDashedBorder) {
+            surfaceCtx.setLineDash([4, 4]);
+            surfaceCtx.strokeStyle = '#a855f7';
+            surfaceCtx.lineWidth = 1;
+            surfaceCtx.strokeRect(lassoImageX, lassoImageY, lassoSelectedImage.width, lassoSelectedImage.height);
+          }
           surfaceCtx.restore();
         }
       };
@@ -6495,10 +8984,10 @@ function initPremiumNotesUpgrades() {
 
   function dropLassoSelection() {
     if (!lassoSelectedImage) return;
-    surfaceCtx.save();
-    surfaceCtx.drawImage(lassoSelectedImage, lassoImageX, lassoImageY);
-    surfaceCtx.restore();
+    // Draw the image synchronously onto the canvas WITHOUT the dashed border
+    redrawCanvasWithFloatingLasso(false);
     lassoSelectedImage = null;
+    lassoBaseCanvas = null;
     pushSurfaceCanvasState();
   }
 
@@ -6608,6 +9097,21 @@ function initPremiumNotesUpgrades() {
     };
   }
 
+  // Tool button selection handlers
+  const toolBtns = document.querySelectorAll('.draw-tools-group .draw-tool-btn');
+  toolBtns.forEach(btn => {
+    btn.onclick = () => {
+      toolBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const toolName = btn.getAttribute('data-tool');
+      if (brushTypeDropdown) {
+        brushTypeDropdown.value = toolName;
+        // Trigger onchange manually
+        brushTypeDropdown.dispatchEvent(new Event('change'));
+      }
+    };
+  });
+
   // Actions
   const btnSaveDock = document.getElementById('btn-draw-dock-save');
   if (btnSaveDock) {
@@ -6628,8 +9132,11 @@ function initPremiumNotesUpgrades() {
         const prevState = surfaceStrokesHistory[surfaceStrokesHistory.length - 1];
         const img = new Image();
         img.onload = () => {
+          surfaceCtx.save();
+          surfaceCtx.globalCompositeOperation = 'source-over';
           surfaceCtx.clearRect(0, 0, surfaceCanvas.width, surfaceCanvas.height);
           surfaceCtx.drawImage(img, 0, 0);
+          surfaceCtx.restore();
         };
         img.src = prevState;
       }
@@ -6646,8 +9153,11 @@ function initPremiumNotesUpgrades() {
         
         const img = new Image();
         img.onload = () => {
+          surfaceCtx.save();
+          surfaceCtx.globalCompositeOperation = 'source-over';
           surfaceCtx.clearRect(0, 0, surfaceCanvas.width, surfaceCanvas.height);
           surfaceCtx.drawImage(img, 0, 0);
+          surfaceCtx.restore();
         };
         img.src = nextState;
       }
@@ -6667,6 +9177,7 @@ function initPremiumNotesUpgrades() {
     if (directDrawDock && directDrawDock.style.display === 'flex') {
       window.resizeSurfaceCanvas();
     }
+    updateNotesMobileLayout();
   });
   // ================= 3. SECURE PASSCODE VAULT SCREEN =================
   const vaultTrigger = document.getElementById('btn-note-vault-trigger');
@@ -7380,6 +9891,7 @@ function initPremiumNotesUpgrades() {
 
   // Helper helper close overlays
   function closeOtherOverlays(activeId) {
+    const sketchOverlay = document.getElementById('note-sketch-overlay');
     if (activeId !== 'theme-overlay' && themeOverlay) themeOverlay.style.display = 'none';
     if (activeId !== 'sketch-overlay' && sketchOverlay) sketchOverlay.style.display = 'none';
     if (activeId !== 'vault-config-overlay' && vaultConfigOverlay) vaultConfigOverlay.style.display = 'none';
@@ -8453,17 +10965,10 @@ async function createNewNotePage() {
   await renderNotesView();
   loadActiveNoteIntoEditor();
 
-  // Focus title immediately
-  const titleField = document.getElementById('note-editor-title');
-  if (titleField) {
-    titleField.focus();
-    titleField.select();
-  }
-
   showNotification('Created a new workspace page! 📄', 'linear-gradient(135deg, #6366f1, #10b981)');
 }
 
-// Upgraded Tabbed Emoji Picker logic with beautiful 2D flat Twemoji CDN SVGs
+// Notion-style native emoji picker for note pages
 function showEmojiPickerForNote(triggerEl, note) {
   const existing = document.getElementById('note-emoji-picker-popover');
   if (existing) {
@@ -8482,18 +10987,19 @@ function showEmojiPickerForNote(triggerEl, note) {
   picker.style.borderRadius = '16px';
   picker.style.boxShadow = '0 15px 35px rgba(0,0,0,0.6)';
   picker.style.backdropFilter = 'blur(20px)';
-  picker.style.width = '290px';
+  picker.style.width = isNotesMobileView() ? '100%' : '320px';
   picker.style.display = 'flex';
   picker.style.flexDirection = 'column';
   picker.style.gap = '0.75rem';
   picker.style.animation = 'slideDownDrawer 0.2s ease-in-out';
 
-  // 1. Tab bar
+  const titleLbl = document.createElement('div');
+  titleLbl.className = 'notion-emoji-picker-title';
+  titleLbl.textContent = 'Choose an icon';
+  picker.appendChild(titleLbl);
+
   const tabContainer = document.createElement('div');
-  tabContainer.style.display = 'flex';
-  tabContainer.style.gap = '0.35rem';
-  tabContainer.style.borderBottom = '1px solid var(--border-glass)';
-  tabContainer.style.paddingBottom = '0.5rem';
+  tabContainer.className = 'notion-emoji-tabs';
 
   const categories = [
     { name: 'Smileys', icon: '😀' },
@@ -8504,48 +11010,25 @@ function showEmojiPickerForNote(triggerEl, note) {
 
   let activeCatName = 'Smileys';
   const gridContainer = document.createElement('div');
-  gridContainer.style.display = 'grid';
-  gridContainer.style.gridTemplateColumns = 'repeat(6, 1fr)';
-  gridContainer.style.gap = '0.4rem';
-  gridContainer.style.maxHeight = '200px';
-  gridContainer.style.overflowY = 'auto';
-  gridContainer.style.paddingRight = '0.2rem';
+  gridContainer.className = 'notion-emoji-grid';
 
   const renderCategoryGrid = (catName) => {
     gridContainer.innerHTML = '';
     const emojis = EMOJI_CATEGORIES[catName];
-    
+
     emojis.forEach(em => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'emoji-pick-btn';
-      btn.style.background = 'transparent';
-      btn.style.border = 'none';
-      btn.style.cursor = 'pointer';
-      btn.style.padding = '0.3rem';
-      btn.style.borderRadius = '8px';
-      btn.style.display = 'flex';
-      btn.style.alignItems = 'center';
-      btn.style.justifyContent = 'center';
-      btn.style.transition = 'background 0.2s';
-      
-      btn.innerHTML = `<img src="${getTwemojiUrl(em)}" alt="${em}" style="width: 22px; height: 22px; display: block; object-fit: contain;">`;
-
-      btn.addEventListener('mouseover', () => {
-        btn.style.background = 'rgba(255,255,255,0.08)';
-      });
-      btn.addEventListener('mouseout', () => {
-        btn.style.background = 'transparent';
-      });
+      btn.className = 'notion-emoji-pick-btn';
+      btn.textContent = em;
+      btn.title = em;
 
       btn.addEventListener('click', async () => {
         note.emoji = em;
-        triggerEl.innerHTML = `<img src="${getTwemojiUrl(em)}" alt="emoji" style="width: 32px; height: 32px; display: block; object-fit: contain;">`;
+        setNativeEmoji(triggerEl, em, 32);
 
         const sidebarEmoji = document.querySelector(`.note-page-row[data-id="${note.id}"] .page-icon`);
-        if (sidebarEmoji) {
-          sidebarEmoji.innerHTML = `<img src="${getTwemojiUrl(em)}" alt="emoji" style="width: 16px; height: 16px; display: block; object-fit: contain; vertical-align: middle;">`;
-        }
+        if (sidebarEmoji) setNativeEmoji(sidebarEmoji, em, 18);
 
         await state.db.updateNote(note);
         picker.remove();
@@ -8559,41 +11042,14 @@ function showEmojiPickerForNote(triggerEl, note) {
   categories.forEach(cat => {
     const tabBtn = document.createElement('button');
     tabBtn.type = 'button';
-    tabBtn.style.flex = '1';
-    tabBtn.style.padding = '0.35rem';
-    tabBtn.style.borderRadius = '8px';
-    tabBtn.style.border = 'none';
-    tabBtn.style.cursor = 'pointer';
-    tabBtn.style.fontSize = '0.9rem';
-    tabBtn.style.display = 'flex';
-    tabBtn.style.alignItems = 'center';
-    tabBtn.style.justifyContent = 'center';
-    tabBtn.style.gap = '0.25rem';
-    tabBtn.style.transition = 'all 0.2s';
-
-    const updateTabStyles = () => {
-      if (activeCatName === cat.name) {
-        tabBtn.style.background = 'rgba(255,255,255,0.08)';
-        tabBtn.style.color = '#fff';
-      } else {
-        tabBtn.style.background = 'transparent';
-        tabBtn.style.color = 'var(--text-muted)';
-      }
-    };
-
-    updateTabStyles();
-
-    tabBtn.innerHTML = `<img src="${getTwemojiUrl(cat.icon)}" alt="${cat.name}" style="width: 16px; height: 16px; display: block; object-fit: contain;">`;
+    tabBtn.className = `notion-emoji-tab${activeCatName === cat.name ? ' active' : ''}`;
+    tabBtn.textContent = cat.icon;
+    tabBtn.title = cat.name;
 
     tabBtn.addEventListener('click', () => {
       activeCatName = cat.name;
-      tabContainer.querySelectorAll('button').forEach(b => {
-        b.style.background = 'transparent';
-        b.style.color = 'var(--text-muted)';
-      });
-      tabBtn.style.background = 'rgba(255,255,255,0.08)';
-      tabBtn.style.color = '#fff';
-      
+      tabContainer.querySelectorAll('.notion-emoji-tab').forEach(b => b.classList.remove('active'));
+      tabBtn.classList.add('active');
       renderCategoryGrid(cat.name);
     });
 
@@ -8601,15 +11057,10 @@ function showEmojiPickerForNote(triggerEl, note) {
   });
 
   renderCategoryGrid('Smileys');
-
   picker.appendChild(tabContainer);
   picker.appendChild(gridContainer);
 
-  const rect = triggerEl.getBoundingClientRect();
-  picker.style.top = `${rect.bottom + window.scrollY + 6}px`;
-  picker.style.left = `${rect.left + window.scrollX}px`;
-
-  document.body.appendChild(picker);
+  positionNotesPopover(picker, triggerEl);
 
   const closeHandler = (e) => {
     if (!picker.contains(e.target) && e.target !== triggerEl) {
@@ -8625,10 +11076,15 @@ async function renderNotesView() {
   const container = document.getElementById('notes-pages-list');
   if (!container) return;
 
+  const currentTab = state.notesSidebarTab || 'active';
+  const fabBtn = document.getElementById('btn-add-note-page');
+  if (fabBtn) {
+    fabBtn.style.display = (currentTab === 'active') ? 'flex' : 'none';
+  }
+
   const searchInput = document.getElementById('notes-search-input');
   const q = searchInput ? searchInput.value.toLowerCase().trim() : '';
 
-  const currentTab = state.notesSidebarTab || 'active';
   let html = '';
 
   const preprocessNotes = () => {
@@ -8658,23 +11114,7 @@ async function renderNotesView() {
     }
   }
 
-  // If no active note is selected, auto-select the first one matching the tab (unfiltered by search query to avoid jumping)
-  if (!state.activeNoteId) {
-    let tabNotes = [];
-    if (currentTab === 'active') {
-      tabNotes = state.notes.filter(n => !n.isDeleted && !n.isArchived && !n.isHidden);
-    } else if (currentTab === 'archived') {
-      tabNotes = state.notes.filter(n => n.isArchived && !n.isDeleted && !n.isHidden);
-    } else if (currentTab === 'trash') {
-      tabNotes = state.notes.filter(n => n.isDeleted);
-    } else if (currentTab === 'vault' && state.notesVaultUnlocked) {
-      tabNotes = state.notes.filter(n => n.isHidden && !n.isDeleted && !n.isArchived);
-    }
-    
-    if (tabNotes.length > 0) {
-      state.activeNoteId = tabNotes[0].id;
-    }
-  }
+  // Do not automatically select/open the first note in the active tab to allow seeing the list of all notes without opening one.
 
   if (currentTab === 'active') {
     const pinned = state.notes.filter(n => !n.isDeleted && !n.isArchived && !n.isHidden && n.isFavorite && (n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q)));
@@ -8967,7 +11407,7 @@ async function renderNotesView() {
           }
           try {
             showNotification('ℹ️ Please verify your device credentials (PIN/Fingerprint) to continue.', '#3b82f6');
-            await verifyDeviceOwner();
+            await window.verifyDeviceOwner();
           } catch (e) {
             showNotification(`❌ Setup failed: ${e.message}`, '#f43f5e');
             return;
@@ -9074,7 +11514,7 @@ async function renderNotesView() {
 
 function renderNoteRowHTML(n, currentTab) {
   const isActive = n.id === state.activeNoteId ? 'active' : '';
-  const twemoji = getTwemojiUrl(n.emoji || '📄');
+  const pageEmoji = n.emoji || '📄';
   
   let actionsHTML = '';
   if (currentTab === 'active') {
@@ -9112,9 +11552,7 @@ function renderNoteRowHTML(n, currentTab) {
 
   return `
     <div class="note-page-row ${isActive}" data-id="${n.id}">
-      <span class="page-icon" style="display: flex; align-items: center; justify-content: center; width: 18px; height: 18px;">
-        <img src="${twemoji}" alt="emoji" style="width: 16px; height: 16px; display: block; object-fit: contain; vertical-align: middle;">
-      </span>
+      <span class="page-icon notion-emoji" style="font-size: 1.1rem; width: 22px; height: 22px;">${pageEmoji}</span>
       <span class="page-title">${n.title || 'Untitled Page'}</span>
       <div class="page-row-actions" style="display: flex; gap: 0.2rem; align-items: center;">
         ${actionsHTML}
@@ -9278,6 +11716,28 @@ function applyActiveNoteStyles(note) {
   });
 }
 
+// Mobile notes layout: full-screen list OR full-screen editor
+function updateNotesMobileLayout() {
+  const workspace = document.querySelector('.notes-workspace-container');
+  if (!workspace) return;
+
+  const isMobile = window.matchMedia('(max-width: 900px)').matches;
+  if (!isMobile) {
+    workspace.classList.remove('notes-mobile-editor-open', 'notes-mobile-list-open', 'notes-mobile-empty-open');
+    return;
+  }
+
+  const note = state.activeNoteId ? state.notes.find(n => n.id === state.activeNoteId) : null;
+  const hasNotes = state.notes && state.notes.length > 0;
+
+  workspace.classList.toggle('notes-mobile-editor-open', !!note);
+  workspace.classList.toggle('notes-mobile-list-open', !note && hasNotes);
+  workspace.classList.toggle('notes-mobile-empty-open', !note && !hasNotes);
+
+  const backBtn = document.getElementById('btn-notes-mobile-back');
+  if (backBtn) backBtn.style.display = note ? 'flex' : 'none';
+}
+
 // Active Editor Sync
 function loadActiveNoteIntoEditor() {
   const emptyState = document.getElementById('notes-empty-state');
@@ -9291,12 +11751,41 @@ function loadActiveNoteIntoEditor() {
     emptyState.style.display = 'flex';
     activeEditor.style.display = 'none';
     
-    // Update empty state button label depending on whether notes exist in the DB
-    const btnSpan = document.querySelector('#btn-add-note-empty-state span');
-    if (btnSpan) {
-      const hasAnyNotes = state.notes && state.notes.length > 0;
-      btnSpan.innerText = hasAnyNotes ? 'Create New Page' : 'Create First Page';
+    const currentTab = state.notesSidebarTab || 'active';
+    const emptyIcon = document.querySelector('#notes-empty-state .empty-icon');
+    const emptyTitle = document.querySelector('#notes-empty-state h3');
+    const emptyDesc = document.querySelector('#notes-empty-state p');
+    const btnAddEmpty = document.getElementById('btn-add-note-empty-state');
+
+    if (currentTab === 'active') {
+      if (emptyIcon) emptyIcon.innerText = '📝';
+      if (emptyTitle) emptyTitle.innerText = 'Personal Workspace';
+      if (emptyDesc) emptyDesc.innerText = 'Create a new document or select an existing page from the sidebar to start writing notes.';
+      if (btnAddEmpty) btnAddEmpty.style.display = 'inline-flex';
+      
+      const btnSpan = document.querySelector('#btn-add-note-empty-state span');
+      if (btnSpan) {
+        const hasAnyNotes = state.notes && state.notes.length > 0;
+        btnSpan.innerText = hasAnyNotes ? 'Create New Page' : 'Create First Page';
+      }
+    } else if (currentTab === 'archived') {
+      if (emptyIcon) emptyIcon.innerText = '📦';
+      if (emptyTitle) emptyTitle.innerText = 'Archived Pages';
+      if (emptyDesc) emptyDesc.innerText = 'Select an archived page from the sidebar to read it, or restore it back to active pages.';
+      if (btnAddEmpty) btnAddEmpty.style.display = 'none';
+    } else if (currentTab === 'trash') {
+      if (emptyIcon) emptyIcon.innerText = '🗑️';
+      if (emptyTitle) emptyTitle.innerText = 'Trash Inventory';
+      if (emptyDesc) emptyDesc.innerText = 'Select an item from the sidebar to view details, restore, or delete it permanently.';
+      if (btnAddEmpty) btnAddEmpty.style.display = 'none';
+    } else if (currentTab === 'vault') {
+      if (emptyIcon) emptyIcon.innerText = '🔐';
+      if (emptyTitle) emptyTitle.innerText = 'Secure Vault';
+      if (emptyDesc) emptyDesc.innerText = 'Select a locked page from the sidebar or customize your vault settings.';
+      if (btnAddEmpty) btnAddEmpty.style.display = 'none';
     }
+    
+    updateNotesMobileLayout();
     return;
   }
 
@@ -9424,8 +11913,7 @@ function loadActiveNoteIntoEditor() {
   // Load emojis
   const emojiTrigger = document.getElementById('note-emoji-trigger');
   if (emojiTrigger) {
-    const em = note.emoji || '📄';
-    emojiTrigger.innerHTML = `<img src="${getTwemojiUrl(em)}" alt="emoji" style="width: 32px; height: 32px; display: block; object-fit: contain;">`;
+    setNativeEmoji(emojiTrigger, note.emoji || '📄', 32);
   }
 
   // Load custom categories and subcategories
@@ -9455,7 +11943,7 @@ function loadActiveNoteIntoEditor() {
 
       // 1. Populate Category row
       if (catEmojiSpan) {
-        catEmojiSpan.innerHTML = `<img src="${getTwemojiUrl(cat.emoji)}" alt="${cat.emoji}" style="width: 16px; height: 16px; object-fit: contain;">`;
+        setNativeEmoji(catEmojiSpan, cat.emoji || '📂', 16);
       }
       if (catNameSpan) {
         catNameSpan.innerText = cat.name || (cat.id ? cat.id.charAt(0).toUpperCase() + cat.id.slice(1) : 'Category');
@@ -9467,7 +11955,7 @@ function loadActiveNoteIntoEditor() {
       if (subcat) {
         if (subRow) subRow.style.display = 'flex';
         if (subcatEmojiSpan) {
-          subcatEmojiSpan.innerHTML = `<img src="${getTwemojiUrl(subcat.emoji)}" alt="${subcat.emoji}" style="width: 14px; height: 14px; object-fit: contain;">`;
+          setNativeEmoji(subcatEmojiSpan, subcat.emoji || '📌', 14);
         }
         if (subcatNameSpan) {
           subcatNameSpan.innerText = subcat.name;
@@ -9559,6 +12047,12 @@ function loadActiveNoteIntoEditor() {
   // Load contents
   if (contentArea) {
     contentArea.value = note.content || '';
+    if (window.ensureLinkBadgesHaveEditButtons) {
+      window.ensureLinkBadgesHaveEditButtons(contentArea);
+    }
+    if (window.ensureFileCardsHaveViewOptions) {
+      window.ensureFileCardsHaveViewOptions(contentArea);
+    }
   }
 
   // Reset visual saved label
@@ -9568,6 +12062,11 @@ function loadActiveNoteIntoEditor() {
   if (window.checkNotePasscodeState) {
     window.checkNotePasscodeState(note);
   }
+
+  // Re-run AI Copilot to refresh tags and avoid showing stale labels from previous pages
+  runAutoAICopilot();
+
+  updateNotesMobileLayout();
 }
 
 // Notion-Style GFM parser for Preview Mode
@@ -9942,22 +12441,81 @@ function runAutoAICopilot() {
     'looking', 'looks', 'looked', 'asked', 'asked', 'asked', 'toggled', 'added', 'removed',
     'thing', 'things', 'matter', 'looks', 'seems', 'seemed', 'becomes', 'became'
   ];
+  const semanticThemes = [
+    {
+      keywords: ['paint', 'painting', 'color', 'colors', 'art', 'sketch', 'lamp', 'mold', 'molded', 'splatter', 'pattern', 'draw', 'drawing', 'canvas', 'creative', 'create'],
+      tags: ['#CREATIVE', '#SPONTANEITY', '#ARTISTIC']
+    },
+    {
+      keywords: ['smile', 'smiled', 'happy', 'glad', 'love', 'laugh', 'laughs', 'laughed', 'joy', 'peace', 'peaceful', 'smiles'],
+      tags: ['#JOY', '#OPTIMISM', '#SERENITY']
+    },
+    {
+      keywords: ['frustrated', 'frustration', 'anger', 'angry', 'sad', 'sadness', 'cry', 'crying', 'pain', 'hurts', 'hurt', 'vent', 'venting', 'feelings', 'feeling', 'heart', 'clear'],
+      tags: ['#CATHARSIS', '#RELEASE', '#EMOTIONAL']
+    },
+    {
+      keywords: ['window', 'clouds', 'wind', 'nature', 'sky', 'trees', 'sun', 'sunset', 'rain', 'breeze', 'silent', 'quiet', 'calm'],
+      tags: ['#SERENITY', '#MINDFULNESS', '#PEACE']
+    },
+    {
+      keywords: ['write', 'notes', 'journal', 'read', 'thinking', 'thought', 'thoughts', 'realized', 'realizing', 'realise', 'realising', 'understand', 'understood', 'wisdom', 'mind'],
+      tags: ['#REFLECTION', '#INSIGHT', '#MINDFULNESS']
+    },
+    {
+      keywords: ['work', 'study', 'focus', 'learn', 'learning', 'project', 'code', 'coding', 'habit', 'habits', 'quest', 'todo', 'task', 'tasks', 'discipline', 'disciplined'],
+      tags: ['#FOCUS', '#GROWTH', '#PRODUCTIVE']
+    },
+    {
+      keywords: ['secure', 'vault', 'safe', 'hidden', 'lock', 'locked', 'passcode', 'secret', 'secrets', 'private', 'privacy'],
+      tags: ['#PRIVACY', '#SECURITY', '#MYSTERY']
+    },
+    {
+      keywords: ['travel', 'trip', 'place', 'journey', 'road', 'walk', 'walking', 'explore', 'exploring'],
+      tags: ['#JOURNEY', '#ADVENTURE', '#PLACES']
+    }
+  ];
+
+  const scores = {};
+  semanticThemes.forEach(theme => {
+    theme.tags.forEach(t => { scores[t] = 0; });
+  });
+
+  const literalCounts = {};
   words.forEach(w => {
+    // 1. Score Semantic Themes
+    semanticThemes.forEach(theme => {
+      if (theme.keywords.includes(w)) {
+        theme.tags.forEach(t => {
+          scores[t] += 2.0;
+        });
+      }
+    });
+    // 2. Score Literal Words
     if (w.length > 4 && !stopwords.includes(w)) {
-      map[w] = (map[w] || 0) + 1;
+      literalCounts[w] = (literalCounts[w] || 0) + 1;
     }
   });
 
-  const sorted = Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 3);
+  // Convert literal words to tags and merge scores
+  Object.keys(literalCounts).forEach(w => {
+    const t = '#' + w.toUpperCase();
+    scores[t] = (scores[t] || 0) + literalCounts[w] * 0.85;
+  });
+
+  // Sort tags by score
+  const sortedTags = Object.entries(scores)
+    .filter(entry => entry[1] > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(entry => entry[0]);
+
   tagsContainer.innerHTML = '';
   
-  const defaultLabels = ['#creative', '#insight', '#focus'];
-  const finalLabels = [];
-  if (sorted.length > 0) {
-    sorted.forEach(entry => finalLabels.push('#' + entry[0]));
-  }
+  const defaultLabels = ['#CREATIVE', '#INSIGHT', '#FOCUS'];
+  const finalLabels = [...sortedTags];
+  
   while (finalLabels.length < 3) {
-    const def = defaultLabels[finalLabels.length];
+    const def = defaultLabels[finalLabels.length] || '#GENERAL';
     if (!finalLabels.includes(def)) finalLabels.push(def);
   }
 
@@ -10118,38 +12676,48 @@ function initNotesPlusMenuAndWYSIWYG() {
       };
     }
 
+    const insertOriginalScrapbookMedia = (base64Data, fileName, isImage) => {
+      let mediaHTML = '';
+      if (!isImage) {
+        mediaHTML = `<video src="${base64Data}" controls style="width:100%; border-radius:8px; object-fit:cover; max-height:220px;"></video>`;
+      } else {
+        mediaHTML = `<img src="${base64Data}" style="width:100%; border-radius:8px; object-fit:cover; max-height:220px;" />`;
+      }
+
+      const scrapbookHTML = `
+        <div class="scrapbook-card" style="display:flex; flex-direction:row; gap:1.25rem; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:1.25rem; border-radius:18px; margin:1.5rem 0; flex-wrap:wrap; box-shadow:0 8px 32px rgba(0,0,0,0.35); text-align:left; font-family: var(--font-primary);" contenteditable="false">
+          <div style="flex:1; min-width:200px; display:flex; flex-direction:column; gap:0.55rem;">
+            <div style="font-size: 0.72rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; tracking: 0.05em; display: flex; align-items: center; justify-content: space-between;">
+              <span>🖼️ Scrapbook Media</span>
+              <button type="button" class="btn-delete-block" style="background:transparent; border:none; color:var(--text-darker); cursor:pointer; font-size: 1.1rem; line-height: 1;" onclick="this.closest('.scrapbook-card').remove(); document.getElementById('note-editor-content').dispatchEvent(new Event('input', { bubbles: true }));">&times;</button>
+            </div>
+            <div style="border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.15); max-height:220px; display:flex; align-items:center; justify-content:center;">
+              ${mediaHTML}
+            </div>
+          </div>
+          <div class="scrapbook-text" style="flex:1.2; min-width:220px; font-size:0.92rem; color:#fff; line-height:1.6; padding:0.5rem; display:flex; flex-direction:column; justify-content:center;">
+            <div contenteditable="true" style="outline:none; min-height:100px; border-left: 2px dashed rgba(255,255,255,0.15); padding-left: 0.75rem;" placeholder="Write thoughts next to media..." oninput="document.getElementById('note-editor-content').dispatchEvent(new Event('input', { bubbles: true }));">Write thoughts next to media...</div>
+          </div>
+        </div>
+      `;
+      insertHTMLAtCursor(scrapbookHTML);
+      const contentArea = document.getElementById('note-editor-content');
+      if (contentArea) {
+        contentArea.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    };
+
+
+
     const processScrapbookMediaFile = (file) => {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
         const base64Data = reader.result;
-        let mediaHTML = '';
-        if (file.type.startsWith('video/')) {
-          mediaHTML = `<video src="${base64Data}" controls style="width:100%; border-radius:8px; object-fit:cover; max-height:220px;"></video>`;
+        if (file.type.startsWith('image/')) {
+          insertOriginalScrapbookMedia(base64Data, file.name, true);
         } else {
-          mediaHTML = `<img src="${base64Data}" style="width:100%; border-radius:8px; object-fit:cover; max-height:220px;" />`;
-        }
-
-        const scrapbookHTML = `
-          <div class="scrapbook-card" style="display:flex; flex-direction:row; gap:1.25rem; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:1.25rem; border-radius:18px; margin:1.5rem 0; flex-wrap:wrap; box-shadow:0 8px 32px rgba(0,0,0,0.35); text-align:left; font-family: var(--font-primary);" contenteditable="false">
-            <div style="flex:1; min-width:200px; display:flex; flex-direction:column; gap:0.55rem;">
-              <div style="font-size: 0.72rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; tracking: 0.05em; display: flex; align-items: center; justify-content: space-between;">
-                <span>🖼️ Scrapbook Media</span>
-                <button type="button" class="btn-delete-block" style="background:transparent; border:none; color:var(--text-darker); cursor:pointer; font-size: 1.1rem; line-height: 1;" onclick="this.closest('.scrapbook-card').remove(); document.getElementById('note-editor-content').dispatchEvent(new Event('input', { bubbles: true }));">&times;</button>
-              </div>
-              <div style="border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.15); max-height:220px; display:flex; align-items:center; justify-content:center;">
-                ${mediaHTML}
-              </div>
-            </div>
-            <div class="scrapbook-text" style="flex:1.2; min-width:220px; font-size:0.92rem; color:#fff; line-height:1.6; padding:0.5rem; display:flex; flex-direction:column; justify-content:center;">
-              <div contenteditable="true" style="outline:none; min-height:100px; border-left: 2px dashed rgba(255,255,255,0.15); padding-left: 0.75rem;" placeholder="Write thoughts next to media..." oninput="document.getElementById('note-editor-content').dispatchEvent(new Event('input', { bubbles: true }));">Write thoughts next to media...</div>
-            </div>
-          </div>
-        `;
-        insertHTMLAtCursor(scrapbookHTML);
-        const contentArea = document.getElementById('note-editor-content');
-        if (contentArea) {
-          contentArea.dispatchEvent(new Event('input', { bubbles: true }));
+          insertOriginalScrapbookMedia(base64Data, file.name, false);
         }
       };
       reader.readAsDataURL(file);
@@ -10390,13 +12958,17 @@ function initNotesPlusMenuAndWYSIWYG() {
             
             const fileBlockHTML = `
               <div class="embedded-file-card" style="margin: 1.25rem 0; padding: 0.85rem 1.25rem; background: ${badgeColor}; border: 1px solid ${borderColor}; border-radius: 14px; max-width: 420px; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; font-family: var(--font-primary); box-shadow: 0 8px 32px rgba(0,0,0,0.25);" contenteditable="false">
-                <a href="${base64Data}" download="${file.name}" style="display: flex; align-items: center; gap: 0.75rem; text-decoration: none; color: ${textColor}; flex: 1; overflow: hidden;">
+                <div style="display: flex; align-items: center; gap: 0.75rem; color: ${textColor}; flex: 1; overflow: hidden;">
                   <span style="font-size: 1.5rem; flex-shrink: 0;">${fileIcon}</span>
                   <div style="display: flex; flex-direction: column; text-align: left; overflow: hidden; min-width: 0;">
                     <span style="font-size: 0.85rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${file.name}</span>
-                    <span style="font-size: 0.68rem; color: var(--text-muted);">${fileSizeMB} MB • Download</span>
+                    <span style="font-size: 0.68rem; color: var(--text-muted); display: flex; gap: 0.5rem; align-items: center;">
+                      <span>${fileSizeMB} MB</span>
+                      <span>•</span>
+                      <button type="button" class="btn-view-document" style="background:none; border:none; color:#818cf8; cursor:pointer; font-size:0.68rem; font-weight:700; padding:0; text-decoration:underline;" onclick="window.viewAttachedDocument(this)" data-file-name="${file.name}" data-base64="${base64Data}">View</button>
+                    </span>
                   </div>
-                </a>
+                </div>
                 <button type="button" class="btn-delete-block" style="background:transparent; border:none; color:var(--text-darker); cursor:pointer; font-size: 1.25rem; line-height: 1; padding: 0.2rem; flex-shrink: 0;" onclick="this.closest('.embedded-file-card').remove(); document.getElementById('note-editor-content').dispatchEvent(new Event('input', { bubbles: true }));">&times;</button>
               </div>
             `;
@@ -10418,10 +12990,212 @@ function initNotesPlusMenuAndWYSIWYG() {
     const btnCancelLink = document.getElementById('btn-cancel-link');
     const btnCloseLinkLabel = document.getElementById('btn-close-link-modal');
 
+    // Global helper to escape HTML characters
+    window.escapeDocumentHTML = (str) => {
+      return str.replace(/[&<>'"]/g, 
+        tag => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          "'": '&#39;',
+          '"': '&quot;'
+        }[tag] || tag)
+      );
+    };
+
+    // Global variables/helpers for Document Viewing
+    window.viewAttachedDocument = (button) => {
+      const fileName = button.getAttribute('data-file-name') || 'Document';
+      const base64Data = button.getAttribute('data-base64') || '';
+      if (!base64Data) {
+        showNotification('❌ Document data missing!', 'var(--color-rose)');
+        return;
+      }
+
+      let mimeType = '';
+      const match = base64Data.match(/^data:([^;]+);/);
+      if (match) {
+        mimeType = match[1];
+      }
+
+      // Check if running inside Android app container with native bridge
+      if (window.DnDAndroid && typeof window.DnDAndroid.openBase64File === 'function') {
+        try {
+          window.DnDAndroid.openBase64File(base64Data, fileName, mimeType);
+          return; // Delegated to native application opener
+        } catch (e) {
+          console.error("Native file opener failed, falling back to in-app viewer", e);
+        }
+      }
+
+      const viewerModal = document.getElementById('modal-document-viewer');
+      const viewerTitle = document.getElementById('document-viewer-title');
+      const viewerBody = document.getElementById('document-viewer-body');
+      const viewerDownload = document.getElementById('btn-document-viewer-download');
+
+      if (!viewerModal || !viewerTitle || !viewerBody) {
+        const win = window.open();
+        if (win) {
+          win.document.write(`<iframe src="${base64Data}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+        } else {
+          showNotification('❌ Popup blocked! Please enable popups.', 'var(--color-rose)');
+        }
+        return;
+      }
+
+      viewerTitle.textContent = fileName;
+      viewerBody.innerHTML = '';
+
+      if (viewerDownload) {
+        viewerDownload.setAttribute('href', base64Data);
+        viewerDownload.setAttribute('download', fileName);
+      }
+
+      const ext = fileName.split('.').pop().toLowerCase();
+      
+      if (mimeType.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
+        viewerBody.innerHTML = `
+          <div style="display:flex; justify-content:center; align-items:center; width:100%; height:100%; overflow:auto; max-height:70vh;">
+            <img src="${base64Data}" style="max-width:100%; max-height:70vh; object-fit:contain; border-radius:8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);" />
+          </div>
+        `;
+      } else if (mimeType === 'application/pdf' || ext === 'pdf') {
+        viewerBody.innerHTML = `
+          <object data="${base64Data}" type="application/pdf" style="width:100%; height:70vh; border-radius:8px;">
+            <embed src="${base64Data}" type="application/pdf" style="width:100%; height:70vh; border-radius:8px;" />
+            <div style="padding: 2rem; text-align: center; color: var(--text-muted);">
+              <p>Your browser doesn't support inline PDF viewing. Please view this file on a device with PDF support.</p>
+            </div>
+          </object>
+        `;
+      } else if (mimeType.startsWith('text/') || ['txt', 'json', 'js', 'css', 'html', 'csv', 'md'].includes(ext)) {
+        try {
+          const parts = base64Data.split(',');
+          if (parts.length > 1) {
+            const raw = atob(parts[1]);
+            const text = decodeURIComponent(escape(raw));
+            viewerBody.innerHTML = `
+              <pre style="white-space: pre-wrap; font-family: monospace; font-size: 0.85rem; color: #f1f5f9; background: rgba(0,0,0,0.4); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border-glass); overflow: auto; max-height: 70vh; text-align: left; margin: 0;">${window.escapeDocumentHTML(text)}</pre>
+            `;
+          } else {
+            throw new Error('Invalid base64 structure');
+          }
+        } catch (e) {
+          viewerBody.innerHTML = `<p style="color:var(--text-muted); text-align:center; padding: 2rem;">Unable to parse text content.</p>`;
+        }
+      } else {
+        viewerBody.innerHTML = `
+          <div style="padding: 3rem 1.5rem; text-align: center; display:flex; flex-direction:column; align-items:center; gap:1rem;">
+            <span style="font-size: 3rem;">📦</span>
+            <h4 style="color: #fff; margin: 0; font-size: 1.1rem;">Preview not available</h4>
+            <p style="color: var(--text-muted); max-width: 300px; font-size: 0.8rem; line-height: 1.5; margin: 0;">
+              Previews are not supported for this file type (${ext.toUpperCase()}).
+            </p>
+          </div>
+        `;
+      }
+
+      viewerModal.classList.add('active');
+    };
+
+    window.ensureFileCardsHaveViewOptions = (container) => {
+      if (!container) return;
+      const cards = container.querySelectorAll('.embedded-file-card');
+      cards.forEach(card => {
+        const linkWrapper = card.querySelector('a[download]');
+        if (linkWrapper && linkWrapper.parentElement === card) {
+          const base64Data = linkWrapper.getAttribute('href') || '';
+          const fileName = linkWrapper.getAttribute('download') || '';
+          const iconSpan = linkWrapper.querySelector('span');
+          const fileIcon = iconSpan ? iconSpan.textContent : '📄';
+          const textDiv = linkWrapper.querySelector('div');
+          const sizeTextSpan = textDiv ? textDiv.querySelector('span:last-child') : null;
+          let sizeText = 'Unknown Size';
+          if (sizeTextSpan) {
+            sizeText = sizeTextSpan.textContent.split('•')[0].trim();
+          }
+
+          const newWrapper = document.createElement('div');
+          newWrapper.style.cssText = 'display: flex; align-items: center; gap: 0.75rem; color: #fff; flex: 1; overflow: hidden;';
+          const linkColor = linkWrapper.style.color || '#fff';
+          newWrapper.style.color = linkColor;
+
+          newWrapper.innerHTML = `
+            <span style="font-size: 1.5rem; flex-shrink: 0;">${fileIcon}</span>
+            <div style="display: flex; flex-direction: column; text-align: left; overflow: hidden; min-width: 0;">
+              <span style="font-size: 0.85rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${fileName}</span>
+              <span style="font-size: 0.68rem; color: var(--text-muted); display: flex; gap: 0.5rem; align-items: center;">
+                <span>${sizeText}</span>
+                <span>•</span>
+                <button type="button" class="btn-view-document" style="background:none; border:none; color:#818cf8; cursor:pointer; font-size:0.68rem; font-weight:700; padding:0; text-decoration:underline;" onclick="window.viewAttachedDocument(this)" data-file-name="${fileName}" data-base64="${base64Data}">View</button>
+              </span>
+            </div>
+          `;
+
+          card.replaceChild(newWrapper, linkWrapper);
+        }
+      });
+    };
+
+    // Global variables/helpers for Link Editing
+    window.activeEditingLinkBadge = null;
+
+    window.editLinkBadge = (button) => {
+      const badge = button.closest('.embedded-link-badge');
+      if (!badge) return;
+      const link = badge.querySelector('a');
+      if (!link) return;
+
+      const currentUrl = link.getAttribute('href') || '';
+      const currentLabel = link.textContent || '';
+
+      window.activeEditingLinkBadge = badge;
+
+      if (inputLinkUrl) inputLinkUrl.value = currentUrl;
+      if (inputLinkLabel) inputLinkLabel.value = currentLabel;
+
+      if (modalLink) {
+        const modalTitle = modalLink.querySelector('h3');
+        if (modalTitle) modalTitle.innerHTML = '<span>🔗</span> Edit Link';
+        if (btnSubmitLink) btnSubmitLink.innerHTML = '🔗 Save Changes';
+        modalLink.classList.add('active');
+        if (inputLinkUrl) inputLinkUrl.focus();
+      }
+    };
+
+    window.ensureLinkBadgesHaveEditButtons = (container) => {
+      if (!container) return;
+      const badges = container.querySelectorAll('.embedded-link-badge');
+      badges.forEach(badge => {
+        if (!badge.querySelector('.btn-edit-link')) {
+          const deleteBtn = badge.querySelector('button');
+          if (deleteBtn) {
+            const editBtn = document.createElement('button');
+            editBtn.type = 'button';
+            editBtn.className = 'btn-edit-link';
+            editBtn.style.cssText = 'background:transparent; border:none; color:var(--text-darker); cursor:pointer; padding:0; display:inline-flex; align-items:center; margin-left:0.35rem; transition:color 0.2s;';
+            editBtn.title = 'Edit link';
+            editBtn.setAttribute('onclick', 'window.editLinkBadge(this)');
+            editBtn.onmouseover = function() { this.querySelector('svg').style.stroke='#818cf8'; };
+            editBtn.onmouseout = function() { this.querySelector('svg').style.stroke='var(--text-darker)'; };
+            editBtn.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-darker)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:stroke 0.2s;"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+            `;
+            badge.insertBefore(editBtn, deleteBtn);
+          }
+        }
+      });
+    };
+
     if (btnAddLink && modalLink) {
       btnAddLink.onclick = () => {
         if (inputLinkUrl) inputLinkUrl.value = '';
         if (inputLinkLabel) inputLinkLabel.value = '';
+        window.activeEditingLinkBadge = null;
+        const modalTitle = modalLink.querySelector('h3');
+        if (modalTitle) modalTitle.innerHTML = '<span>🔗</span> Insert Link';
+        if (btnSubmitLink) btnSubmitLink.innerHTML = '🔗 Insert Link';
+        
         modalLink.classList.add('active');
         plusMenu.style.display = 'none';
         newFloatingBtn.classList.remove('active');
@@ -10431,6 +13205,7 @@ function initNotesPlusMenuAndWYSIWYG() {
 
     const closeLinkModal = () => {
       if (modalLink) modalLink.classList.remove('active');
+      window.activeEditingLinkBadge = null;
     };
 
     if (btnCancelLink) btnCancelLink.onclick = closeLinkModal;
@@ -10458,15 +13233,32 @@ function initNotesPlusMenuAndWYSIWYG() {
           }
         }
         
-        const linkHTML = `
-          <span class="embedded-link-badge" style="margin: 0.25rem 0.15rem; padding: 0.35rem 0.65rem; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 700; color: #818cf8; font-family: var(--font-primary);" contenteditable="false">
-            <span>🔗</span>
-            <a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="color: #818cf8; text-decoration: none; border-bottom: 1px dotted #818cf8;">${label}</a>
-            <button type="button" style="background:transparent; border:none; color:var(--text-darker); cursor:pointer; font-size: 0.95rem; line-height: 1; margin-left: 0.2rem; display: inline-flex; align-items: center;" onclick="this.parentElement.remove(); document.getElementById('note-editor-content').dispatchEvent(new Event('input', { bubbles: true }));">&times;</button>
-          </span>&nbsp;
-        `;
-        insertHTMLAtCursor(linkHTML);
-        closeLinkModal();
+        if (window.activeEditingLinkBadge) {
+          // Edit mode: update existing badge
+          const link = window.activeEditingLinkBadge.querySelector('a');
+          if (link) {
+            link.setAttribute('href', cleanUrl);
+            link.textContent = label;
+          }
+          // Trigger auto-save
+          document.getElementById('note-editor-content').dispatchEvent(new Event('input', { bubbles: true }));
+          window.activeEditingLinkBadge = null;
+          closeLinkModal();
+        } else {
+          // Insert mode: create a new badge
+          const linkHTML = `
+            <span class="embedded-link-badge" style="margin: 0.25rem 0.15rem; padding: 0.35rem 0.65rem; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 700; color: #818cf8; font-family: var(--font-primary);" contenteditable="false">
+              <span>🔗</span>
+              <a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="color: #818cf8; text-decoration: none; border-bottom: 1px dotted #818cf8;">${label}</a>
+              <button type="button" class="btn-edit-link" style="background:transparent; border:none; color:var(--text-darker); cursor:pointer; padding:0; display:inline-flex; align-items:center; margin-left:0.35rem; transition:color 0.2s;" onclick="window.editLinkBadge(this)" title="Edit link" onmouseover="this.querySelector('svg').style.stroke='#818cf8'" onmouseout="this.querySelector('svg').style.stroke='var(--text-darker)'">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-darker)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:stroke 0.2s;"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+              </button>
+              <button type="button" style="background:transparent; border:none; color:var(--text-darker); cursor:pointer; font-size: 0.95rem; line-height: 1; margin-left: 0.2rem; display: inline-flex; align-items: center;" onclick="this.parentElement.remove(); document.getElementById('note-editor-content').dispatchEvent(new Event('input', { bubbles: true }));">&times;</button>
+            </span>&nbsp;
+          `;
+          insertHTMLAtCursor(linkHTML);
+          closeLinkModal();
+        }
       };
     }
   }
@@ -10598,6 +13390,7 @@ window.addChecklistItem = function(buttonEl) {
 // ================= WEBRTC LIVE CAMERA CONTROLLERS =================
 let liveCameraStream = null;
 let capturedPhotoBase64 = null;
+let cameraFacingMode = 'user';
 
 function base64ToFile(base64Data, filename) {
   const arr = base64Data.split(',');
@@ -10620,6 +13413,7 @@ window.startCameraCapture = function() {
   const btnCapture = document.getElementById('btn-camera-capture');
   const btnRetake = document.getElementById('btn-camera-retake');
   const btnSave = document.getElementById('btn-camera-save');
+  const btnToggleFacing = document.getElementById('btn-camera-toggle-facing');
 
   if (!modal) return;
 
@@ -10635,11 +13429,18 @@ window.startCameraCapture = function() {
   if (btnCapture) btnCapture.style.display = 'block';
   if (btnRetake) btnRetake.style.display = 'none';
   if (btnSave) btnSave.style.display = 'none';
+  if (btnToggleFacing) btnToggleFacing.style.display = 'flex';
   
   capturedPhotoBase64 = null;
 
-  // Access user camera stream
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+  // Stop any existing live camera tracks before starting a new stream
+  if (liveCameraStream) {
+    liveCameraStream.getTracks().forEach(track => track.stop());
+    liveCameraStream = null;
+  }
+
+  // Access user camera stream with cameraFacingMode
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: cameraFacingMode } })
     .then(stream => {
       liveCameraStream = stream;
       if (video) {
@@ -10652,6 +13453,7 @@ window.startCameraCapture = function() {
       if (video) video.style.display = 'none';
       if (errorMsg) errorMsg.style.display = 'block';
       if (btnCapture) btnCapture.style.display = 'none';
+      if (btnToggleFacing) btnToggleFacing.style.display = 'none';
     });
 };
 
@@ -10696,6 +13498,8 @@ window.capturePhoto = function() {
     if (btnCapture) btnCapture.style.display = 'none';
     if (btnRetake) btnRetake.style.display = 'block';
     if (btnSave) btnSave.style.display = 'block';
+    const btnToggleFacing = document.getElementById('btn-camera-toggle-facing');
+    if (btnToggleFacing) btnToggleFacing.style.display = 'none';
 
     if (liveCameraStream) {
       liveCameraStream.getTracks().forEach(track => track.stop());
@@ -10732,6 +13536,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const btnSave = document.getElementById('btn-camera-save');
   if (btnSave) btnSave.onclick = () => window.saveCapturedPhoto();
+  
+  const btnToggleFacing = document.getElementById('btn-camera-toggle-facing');
+  if (btnToggleFacing) {
+    btnToggleFacing.onclick = () => {
+      cameraFacingMode = (cameraFacingMode === 'user') ? 'environment' : 'user';
+      window.startCameraCapture();
+    };
+  }
   
   const cameraModal = document.getElementById('modal-live-camera');
   if (cameraModal) {

@@ -1,6 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script>
+    window.addEventListener('error', function(e) {
+      showCrashScreen(e.message || e.error, (e.filename || 'unknown') + ':' + (e.lineno || '0'));
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      showCrashScreen(e.reason, 'Unhandled Promise Rejection');
+    });
+
+    function showCrashScreen(error, source) {
+      let errDiv = document.getElementById('app-crash-screen');
+      if (!errDiv) {
+        errDiv = document.createElement('div');
+        errDiv.id = 'app-crash-screen';
+        errDiv.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:#0f172a; color:#fff; z-index:999999; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:2rem; box-sizing:border-box; font-family:sans-serif; text-align:center;';
+        errDiv.innerHTML = `
+          <span style="font-size:3.5rem;">🚧</span>
+          <h2 style="margin:1rem 0 0.5rem 0; color:#f43f5e; font-weight:700;">App Startup Failed</h2>
+          <p style="color:#94a3b8; font-size:0.9rem; max-width:320px; line-height:1.4; margin-bottom:1.5rem;">An error occurred while loading the application database or assets.</p>
+          <div style="background:rgba(244,63,94,0.1); border:1px solid rgba(244,63,94,0.3); border-radius:10px; padding:1rem; text-align:left; width:100%; max-width:400px; font-family:monospace; font-size:0.75rem; color:#fda4af; overflow-x:auto; margin-bottom:1.5rem;">
+            <strong>Error:</strong> <span id="crash-error-text"></span><br>
+            <strong style="display:block; margin-top:0.5rem;">Source:</strong> <span id="crash-source-text"></span>
+          </div>
+          <button onclick="window.location.reload()" style="padding:0.6rem 1.2rem; border-radius:8px; background:#6366f1; color:#fff; font-weight:bold; border:none; cursor:pointer; font-size:0.85rem;">Try Reload</button>
+        `;
+        document.body.appendChild(errDiv);
+      }
+      document.getElementById('crash-error-text').textContent = String(error);
+      document.getElementById('crash-source-text').textContent = String(source);
+    }
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>DnD | Premium Habit Tracker & Life Journal</title>
@@ -15,13 +45,32 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Caveat:wght@400..700&family=Lilita+One&family=Sacramento&family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
   
   <!-- Core Tailwind-equivalent CSS & Visual Polish (app.css) -->
-  <link rel="stylesheet" href="app-v2.css?v=1.5.9">
+  <link rel="stylesheet" href="app-v2.css?v=1.9.9">
   
   <!-- PWA Manifest & Mobile Icons -->
   <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="icon.png">
+  <meta name="apple-mobile-web-app-title" content="DnD">
+  <link rel="apple-touch-icon" href="icon_192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon_192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png">
+
+  <!-- Capture install prompt before page load completes -->
+  <script>
+    window.__deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      window.__deferredInstallPrompt = e;
+      window.dispatchEvent(new CustomEvent('pwa-install-available'));
+    });
+    window.addEventListener('appinstalled', () => {
+      window.__deferredInstallPrompt = null;
+      window.dispatchEvent(new CustomEvent('pwa-installed'));
+    });
+  </script>
   
   <!-- Libraries (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
@@ -117,10 +166,56 @@
           </div>
         </div>
         
-        <div class="header-right">
+        <div class="header-right" style="position: relative;">
+          <!-- Notification Bell Trigger Button -->
+          <div class="header-bell-badge" role="button" tabindex="0" id="btn-header-notifications" title="Open Notifications" style="display: flex; align-items: center; justify-content: center; background: var(--bg-card); border: 1px solid var(--border-glass); padding: 0.6rem 0.75rem; border-radius: 12px; cursor: pointer; transition: var(--transition-smooth); position: relative;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="bell-icon" style="color: var(--text-main);"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            <span class="bell-unread-dot" id="bell-unread-dot" style="display: none; position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; background: hsl(var(--color-rose)); border-radius: 50%; box-shadow: 0 0 8px hsl(var(--color-rose));"></span>
+          </div>
+
           <div class="header-date-badge" role="button" tabindex="0" id="btn-header-date" title="Open consistency calendar">
             <i data-lucide="calendar"></i>
             <span id="header-today-date">May 28, 2026</span>
+          </div>
+
+          <!-- Notifications Center Dropdown Popover -->
+          <div class="notifications-dropdown glass-card" id="header-notifications-dropdown" style="display: none;">
+            <div class="notif-dropdown-header">
+              <div style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--color-indigo))" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                <h3 data-lang="notif_center_title" style="margin: 0; font-size: 0.95rem;">Notifications</h3>
+              </div>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button type="button" class="btn-text-action" id="btn-notif-mark-all-read" data-lang="notif_mark_all_read" style="padding: 0.15rem 0.35rem; font-size: 0.72rem; white-space: nowrap;">Mark all read</button>
+                <button type="button" class="btn-text-action" id="btn-notif-clear-all" data-lang="notif_clear_all" style="padding: 0.15rem 0.35rem; font-size: 0.72rem; color: var(--text-muted); background: transparent; border: none; cursor: pointer; white-space: nowrap;">Clear Read</button>
+              </div>
+            </div>
+
+            <!-- Category Filters Row -->
+            <div class="notif-filters-row">
+              <button type="button" class="notif-filter-pill active" data-filter="all">All</button>
+              <button type="button" class="notif-filter-pill" data-filter="reminder">Reminders</button>
+              <button type="button" class="notif-filter-pill" data-filter="guidance">Guidance</button>
+              <button type="button" class="notif-filter-pill" data-filter="success">Activity</button>
+            </div>
+
+            <!-- Search bar -->
+            <div class="notif-search-bar" style="padding: 0.5rem 1rem;">
+              <input type="text" id="notif-search-input" placeholder="Search notifications..." data-lang-placeholder="notif_search_placeholder" style="width: 100%; flex: none;">
+            </div>
+
+            <!-- Notifications list scroll wrapper -->
+            <ul class="notif-list-wrapper" id="notif-list-container">
+              <!-- Dynamically populated -->
+            </ul>
+
+            <!-- Settings link at the bottom -->
+            <div class="notif-dropdown-footer">
+              <button type="button" class="btn-text-footer" id="btn-notif-go-settings">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                <span data-lang="notif_preferences">Notification Preferences</span>
+              </button>
+            </div>
           </div>
 
           <!-- Monthly Consistency Calendar Dropdown Popover -->
@@ -188,6 +283,9 @@
           <!-- Pinned Core Quest Area -->
           <div id="core-quest-container" style="display: none; margin-bottom: 1.5rem; width: 100%;"></div>
 
+          <!-- Interactive Onboarding & Guidance Guide -->
+          <div id="onboarding-guide-container" class="glass-card onboarding-card" style="display: none; margin-bottom: 1.5rem; width: 100%;"></div>
+
           <!-- Agenda Screen -->
           <div class="dashboard-agenda-section">
             <div class="glass-card agenda-main">
@@ -212,13 +310,23 @@
               <div class="glass-card mini-widgets-card">
                 <h4 class="mini-widget-title" data-lang="widget_quick_status">Consistency Wheel</h4>
                 <div class="radial-progress-showcase">
-                  <div class="radial-ring">
-                    <svg width="120" height="120">
-                      <circle class="radial-bg" cx="60" cy="60" r="50"></circle>
-                      <circle class="radial-bar" id="agenda-radial-bar" cx="60" cy="60" r="50" style="stroke-dasharray: 314; stroke-dashoffset: 78;"></circle>
+                  <div class="radial-ring" aria-label="Today consistency progress">
+                    <svg class="radial-svg" viewBox="0 0 120 120" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="consistency-wheel-gradient" x1="18" y1="18" x2="102" y2="102" gradientUnits="userSpaceOnUse">
+                          <stop offset="0%" stop-color="#22d3ee"></stop>
+                          <stop offset="52%" stop-color="#818cf8"></stop>
+                          <stop offset="100%" stop-color="#a855f7"></stop>
+                        </linearGradient>
+                      </defs>
+                      <circle class="radial-bg" cx="60" cy="60" r="52"></circle>
+                      <circle class="radial-bar" id="agenda-radial-bar" cx="60" cy="60" r="52" style="stroke-dasharray: 326.73; stroke-dashoffset: 326.73;"></circle>
                     </svg>
                     <div class="radial-center-text">
-                      <span class="radial-val" id="agenda-radial-pct">75%</span>
+                      <span class="radial-kicker">Today</span>
+                      <span class="radial-val" id="agenda-radial-pct">
+                        <span class="radial-done">0</span><span class="radial-sep">/</span><span class="radial-total">0</span>
+                      </span>
                       <span class="radial-lbl" data-lang="radial_completed">Done</span>
                     </div>
                   </div>
@@ -325,10 +433,13 @@
               </select>
             </div>
             
-            <div class="timeframe-toggle-capsule" style="display: flex; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 10px; padding: 0.2rem; gap: 0.2rem;">
-              <button type="button" class="timeframe-btn" data-range="weekly" style="padding: 0.4rem 0.8rem; border-radius: 7px; border: none; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--text-muted);">Weekly</button>
-              <button type="button" class="timeframe-btn" data-range="monthly" style="padding: 0.4rem 0.8rem; border-radius: 7px; border: none; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--text-muted);">Monthly</button>
-              <button type="button" class="timeframe-btn active" data-range="yearly" style="padding: 0.4rem 0.8rem; border-radius: 7px; border: none; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s; background: hsl(var(--color-indigo)); color: #fff;">Yearly</button>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <span class="dropdown-label">Timeframe:</span>
+              <select class="custom-select" id="analytics-timeframe-selector" style="min-width: 120px;">
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly" selected>Yearly</option>
+              </select>
             </div>
           </div>
 
@@ -428,6 +539,25 @@
         <section id="view-settings" class="app-view">
           <div class="settings-sections-grid">
             
+            <!-- Settings Box 0: Account & Security -->
+            <div class="glass-card settings-card" id="settings-account-card">
+              <div class="card-header">
+                <i data-lucide="user" class="text-indigo"></i>
+                <h3>Account & Security</h3>
+              </div>
+              <div class="settings-body">
+                <div class="settings-row" style="border-bottom: none; padding-bottom: 0px; margin-bottom: 0px;">
+                  <div class="row-info" id="settings-account-status-info">
+                    <h4 id="settings-username-display">Guest Profile</h4>
+                    <p id="settings-username-desc">Your habit progress and notes are stored locally on this device.</p>
+                  </div>
+                  <div style="display: flex; gap: 0.5rem;">
+                    <button type="button" class="action-btn border-btn" id="btn-settings-account-logout" style="padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; font-size: 0.8rem; display: none;">Log Out</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Settings Box 1: Customization -->
             <div class="glass-card settings-card">
               <div class="card-header">
@@ -477,18 +607,94 @@
                   </label>
                 </div>
 
-                <!-- Push Notifications -->
-                <div class="settings-row">
+                <!-- Install App (PWA) -->
+                <div class="settings-row" id="pwa-install-settings-row">
                   <div class="row-info" style="text-align: left;">
-                    <h4 data-lang="set_notif_title">Push Notifications</h4>
-                    <p data-lang="set_notif_desc">Receive browser smart reminders for daily pending habits.</p>
+                    <h4 data-lang="set_install_title">Install Mobile App</h4>
+                    <p id="pwa-install-settings-desc" data-lang="set_install_desc">Add DnD to your home screen for offline access and a full-screen app experience.</p>
                   </div>
-                  <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <button class="border-btn" id="btn-test-notif" style="padding: 0.4rem 0.8rem; font-size: 0.75rem; border-radius: 8px;">Test</button>
-                    <label class="switch-toggle">
-                      <input type="checkbox" id="setting-notif-toggle">
-                      <span class="slider-round"></span>
-                    </label>
+                  <button type="button" class="accent-glow-btn" id="btn-pwa-install-settings" style="padding: 0.55rem 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.35rem; white-space: nowrap;">
+                    <i data-lucide="download" style="width: 16px; height: 16px;"></i>
+                    <span data-lang="btn_install_app">Install App</span>
+                  </button>
+                </div>
+
+                <!-- Push & Alert Preferences -->
+                <div class="settings-block-wrapper" style="border: 1px solid var(--border-glass); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem; background: rgba(0,0,0,0.05); width: 100%;">
+                  <div class="settings-row" style="margin-bottom: 0px; border-bottom: none; padding-bottom: 0px; display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <div class="row-info" style="text-align: left; flex: 1;">
+                      <h4 data-lang="set_notif_title">Push & Alert Notifications</h4>
+                      <p data-lang="set_notif_desc">Configure alert settings for daily schedules, streaks, and gamification.</p>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
+                      <label class="switch-toggle">
+                        <input type="checkbox" id="setting-notif-toggle">
+                        <span class="slider-round"></span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- Granular Sub-preferences (Only visible/active when main toggle is checked) -->
+                  <div id="notifications-subpreferences-panel" style="display: none; margin-top: 1.25rem; border-top: 1px solid var(--border-glass); padding-top: 1rem; flex-direction: column; gap: 1rem;">
+                    <!-- 1. Daily Reminders -->
+                    <div class="settings-sub-row" style="display: flex; justify-content: space-between; align-items: center;">
+                      <div class="row-info" style="text-align: left; flex: 1;">
+                        <h5 style="margin: 0; font-size: 0.9rem; color: var(--text-main);" data-lang="lbl_notif_reminders">Daily Reminders</h5>
+                        <p style="margin: 0; font-size: 0.75rem; color: var(--text-muted);" data-lang="desc_notif_reminders">Receive smart reminders for daily pending habits.</p>
+                      </div>
+                      <label class="switch-toggle" style="flex-shrink: 0;">
+                        <input type="checkbox" id="setting-notif-reminders" checked>
+                        <span class="slider-round"></span>
+                      </label>
+                    </div>
+
+                    <!-- 2. Streak Warnings -->
+                    <div class="settings-sub-row" style="display: flex; justify-content: space-between; align-items: center;">
+                      <div class="row-info" style="text-align: left; flex: 1;">
+                        <h5 style="margin: 0; font-size: 0.9rem; color: var(--text-main);" data-lang="lbl_notif_streaks">Streak Warnings</h5>
+                        <p style="margin: 0; font-size: 0.75rem; color: var(--text-muted);" data-lang="desc_notif_streaks">Get alerted before losing your active habit streaks.</p>
+                      </div>
+                      <label class="switch-toggle" style="flex-shrink: 0;">
+                        <input type="checkbox" id="setting-notif-streaks" checked>
+                        <span class="slider-round"></span>
+                      </label>
+                    </div>
+
+                    <!-- 3. Success Alerts -->
+                    <div class="settings-sub-row" style="display: flex; justify-content: space-between; align-items: center;">
+                      <div class="row-info" style="text-align: left; flex: 1;">
+                        <h5 style="margin: 0; font-size: 0.9rem; color: var(--text-main);" data-lang="lbl_notif_success">Success Alerts</h5>
+                        <p style="margin: 0; font-size: 0.75rem; color: var(--text-muted);" data-lang="desc_notif_success">Celebrate perfect days, level ups, and unlocked achievements.</p>
+                      </div>
+                      <label class="switch-toggle" style="flex-shrink: 0;">
+                        <input type="checkbox" id="setting-notif-success" checked>
+                        <span class="slider-round"></span>
+                      </label>
+                    </div>
+
+                    <!-- 4. Guidance & Tips -->
+                    <div class="settings-sub-row" style="display: flex; justify-content: space-between; align-items: center;">
+                      <div class="row-info" style="text-align: left; flex: 1;">
+                        <h5 style="margin: 0; font-size: 0.9rem; color: var(--text-main);" data-lang="lbl_notif_guidance">Guidance & Tips</h5>
+                        <p style="margin: 0; font-size: 0.75rem; color: var(--text-muted);" data-lang="desc_notif_guidance">Receive context-aware guide cards and feature onboarding tips.</p>
+                      </div>
+                      <label class="switch-toggle" style="flex-shrink: 0;">
+                        <input type="checkbox" id="setting-notif-guidance" checked>
+                        <span class="slider-round"></span>
+                      </label>
+                    </div>
+
+                    <!-- 5. Audio Alerts -->
+                    <div class="settings-sub-row" style="display: flex; justify-content: space-between; align-items: center;">
+                      <div class="row-info" style="text-align: left; flex: 1;">
+                        <h5 style="margin: 0; font-size: 0.9rem; color: var(--text-main);" data-lang="lbl_notif_audio">Audio Alerts</h5>
+                        <p style="margin: 0; font-size: 0.75rem; color: var(--text-muted);" data-lang="desc_notif_audio">Play premium audio cues on habit check-off and actions.</p>
+                      </div>
+                      <label class="switch-toggle" style="flex-shrink: 0;">
+                        <input type="checkbox" id="setting-notif-audio" checked>
+                        <span class="slider-round"></span>
+                      </label>
+                    </div>
                   </div>
                 </div>
 
@@ -511,6 +717,28 @@
                   </div>
                   <button type="button" class="accent-glow-btn" id="btn-open-hidden-inventory-modal" style="padding: 0.5rem 1rem; font-size: 0.8rem; display: flex; align-items: center; gap: 0.25rem; background: linear-gradient(135deg, #8b5cf6, #6d28d9); box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3);">
                     <i data-lucide="eye-off" style="width: 14px; height: 14px;"></i> Open Inventory
+                  </button>
+                </div>
+
+                <!-- Archive Vault Settings Row -->
+                <div class="settings-row">
+                  <div class="row-info" style="text-align: left;">
+                    <h4>Archive Vault</h4>
+                    <p>Access paused habits hidden from active view but keeping historical logs.</p>
+                  </div>
+                  <button type="button" class="accent-glow-btn" id="btn-open-archive-modal" style="padding: 0.5rem 1rem; font-size: 0.8rem; display: flex; align-items: center; gap: 0.25rem; background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 14px rgba(245, 158, 11, 0.3);">
+                    <i data-lucide="archive" style="width: 14px; height: 14px;"></i> Open Archive
+                  </button>
+                </div>
+
+                <!-- Trash Vault Settings Row -->
+                <div class="settings-row">
+                  <div class="row-info" style="text-align: left;">
+                    <h4>Trash Vault</h4>
+                    <p>Access deleted habits that can be restored or permanently removed.</p>
+                  </div>
+                  <button type="button" class="accent-glow-btn" id="btn-open-trash-modal" style="padding: 0.5rem 1rem; font-size: 0.8rem; display: flex; align-items: center; gap: 0.25rem; background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3);">
+                    <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> Open Trash
                   </button>
                 </div>
               </div>
@@ -560,40 +788,7 @@
               </div>
             </div>
 
-            <!-- Settings Box 3: Archive Vault -->
-            <div class="glass-card settings-card grid-span-all" id="settings-archive-vault-card">
-              <div class="card-header">
-                <i data-lucide="archive" class="text-amber"></i>
-                <h3>Archive Vault</h3>
-              </div>
-              <div class="settings-body">
-                <p class="archive-vault-intro">Paused/archived habits are temporarily stored here. They are hidden from active views but retain all histories. You can restore them or move them to Trash.</p>
-                <div class="archived-habits-list-holder" id="archived-habits-vault">
-                  <!-- Archived habits list injected here -->
-                </div>
-              </div>
-            </div>
 
-
-
-            <!-- Settings Box 5: Trash -->
-            <div class="glass-card settings-card grid-span-all" id="settings-trash-card">
-              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                  <i data-lucide="trash-2" class="text-rose"></i>
-                  <h3>Trash</h3>
-                </div>
-                <button type="button" id="btn-empty-habits-trash" class="border-btn" style="padding: 0.35rem 0.75rem; font-size: 0.75rem; border-color: var(--color-rose); color: var(--color-rose); display: none; margin-left: auto;">
-                  Empty Trash
-                </button>
-              </div>
-              <div class="settings-body">
-                <p class="archive-vault-intro">Deleted habits are placed here. You can restore them to your active list or permanently delete them from the database.</p>
-                <div class="archived-habits-list-holder" id="deleted-habits-vault">
-                  <!-- Deleted habits list injected here -->
-                </div>
-              </div>
-            </div>
 
 
 
@@ -681,7 +876,7 @@
               </div>
 
               <!-- Floating Action Button for New Page -->
-              <button type="button" class="accent-glow-btn" id="btn-add-note-page" title="Create a new note page" style="position: absolute; bottom: 1.5rem; right: 1.5rem; z-index: 100; border-radius: 50%; width: 48px; height: 48px; min-width: 48px; justify-content: center; align-items: center; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4); display: flex; padding: 0; border: none;">
+              <button type="button" class="accent-glow-btn notes-fab-btn" id="btn-add-note-page" title="Create a new note page" style="position: absolute; bottom: 1.5rem; right: 1.5rem; z-index: 100; border-radius: 50%; width: 48px; height: 48px; min-width: 48px; justify-content: center; align-items: center; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4); display: flex; padding: 0; border: none;">
                 <i data-lucide="plus" style="width: 20px; height: 20px; color: #fff;"></i>
               </button>
             </div>
@@ -716,9 +911,8 @@
                     
                     <!-- Left: Mobile Back Button & Emoji trigger badge followed by AI tags -->
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
-                      <button type="button" class="border-btn" id="btn-notes-mobile-back" style="display: none; align-items: center; gap: 0.25rem; padding: 0.6rem; border-radius: 8px; height: 38px; font-size: 0.85rem; font-weight: 600; color: #fff; background: transparent; border: 1px solid var(--border-glass); cursor: pointer;">
-                        <i data-lucide="chevron-left" style="width: 16px; height: 16px;"></i>
-                        <span>Back</span>
+                      <button type="button" id="btn-notes-mobile-back" style="display: none; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.15); backdrop-filter: blur(12px); cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.15); flex-shrink: 0;" title="Back to Notes">
+                        <i data-lucide="chevron-left" style="width: 18px; height: 18px; margin-right: 1px;"></i>
                       </button>
                       <div class="note-emoji-preview-badge" id="note-emoji-trigger" title="Change page emoji" style="width: 50px; height: 50px; font-size: 1.8rem; cursor: pointer; display: flex; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.98); border: 2px solid var(--border-glass-strong); border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 10; transition: transform 0.2s; margin-top: 0 !important;">
                         <!-- Twemoji loaded here -->
@@ -845,7 +1039,7 @@
                         </button>
                         
                         <!-- More Actions Dropdown Contents -->
-                        <div class="note-more-dropdown glass-card" id="note-more-dropdown" style="display: none; position: absolute; top: calc(100% + 6px); right: 0; width: 150px; background: rgba(15, 23, 42, 0.98); border: 1px solid var(--border-glass-strong); padding: 0.5rem; border-radius: 12px; backdrop-filter: blur(25px); flex-direction: column; gap: 0.35rem; box-shadow: 0 15px 35px rgba(0,0,0,0.5); z-index: 1000;">
+                        <div class="note-more-dropdown glass-card" id="note-more-dropdown">
                           
                           <!-- Archive Active Button -->
                           <button type="button" class="more-dropdown-item" id="btn-note-archive-active" title="Archive note page">
@@ -1188,7 +1382,6 @@
                         <div style="display: flex; gap: 0.5rem;">
                           <input type="file" id="theme-upload-bg" accept="image/*" style="display: none;">
                           <button type="button" class="sketch-tool-btn" style="flex: 1;" onclick="document.getElementById('theme-upload-bg').click();">📁 Upload Image</button>
-                          <button type="button" class="sketch-tool-btn" id="btn-theme-clear-bg" style="color: var(--color-rose);">🗑️ Reset Cover</button>
                         </div>
                       </div>
 
@@ -1245,7 +1438,7 @@
                 <div class="plus-menu-wrapper" style="position: absolute; bottom: 1.5rem; right: 2.5rem; width: fit-content; z-index: 999; display: flex; flex-direction: column; align-items: flex-end;">
                   
                   <!-- Floating Plus Button -->
-                  <button type="button" id="floating-notes-adder-btn" style="width: 46px; height: 46px; border-radius: 50%; background: linear-gradient(135deg, hsl(var(--color-indigo)), hsl(var(--color-violet))); border: 1px solid rgba(255, 255, 255, 0.2); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px rgba(99, 102, 241, 0.45); backdrop-filter: blur(10px); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); outline: none; position: relative;" title="Add Scrapbook Element">
+                  <button type="button" class="notes-fab-btn" id="floating-notes-adder-btn" style="width: 46px; height: 46px; border-radius: 50%; background: linear-gradient(135deg, hsl(var(--color-indigo)), hsl(var(--color-violet))); border: 1px solid rgba(255, 255, 255, 0.2); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px rgba(99, 102, 241, 0.45); backdrop-filter: blur(10px); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); outline: none; position: relative;" title="Add Scrapbook Element">
                     <span style="font-size: 1.6rem; font-weight: 300; display: inline-block; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); line-height: 1;">+</span>
                   </button>
                   
@@ -1315,8 +1508,15 @@
                 <option value="Finance" data-lang="cat_finance">Finance</option>
                 <option value="Self-care" data-lang="cat_self_care">Self-care</option>
                 <option value="Productivity" selected data-lang="cat_productivity">Productivity</option>
+                <option value="custom">+ Add Custom Category...</option>
               </select>
             </div>
+          </div>
+
+          <!-- Custom Category Input Group -->
+          <div class="form-group" id="habit-custom-category-group" style="display: none; margin-bottom: 1rem;">
+            <label for="habit-custom-category">Custom Category Name *</label>
+            <input type="text" id="habit-custom-category" placeholder="e.g. Hobby, Learning, Social" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-glass); background: rgba(0,0,0,0.2); color: #fff; font-family: var(--font-primary); font-size: 0.95rem;">
           </div>
 
           <div class="form-group">
@@ -1395,9 +1595,9 @@
               <label data-lang="lbl_pick_emoji">Choose Habit Emoji</label>
               
               <!-- Search & Custom input row -->
-              <div style="display: flex; gap: 0.5rem; width: 100%; margin-top: 0.25rem;">
-                <input type="text" id="input-emoji-search" placeholder="Search emojis (e.g. fire, smile, heart)..." style="flex: 2; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border-glass); background: var(--input-bg); color: var(--text-main); font-size: 0.8rem;">
-                <input type="text" id="input-emoji-custom" maxlength="2" placeholder="Or paste ANY emoji..." style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border-glass); background: var(--input-bg); color: var(--text-main); font-size: 0.8rem; text-align: center;">
+              <div class="emoji-search-custom-row">
+                <input type="text" id="input-emoji-search" placeholder="Search emojis..." style="flex: 2; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border-glass); background: var(--input-bg); color: var(--text-main); font-size: 0.8rem;">
+                <input type="text" id="input-emoji-custom" maxlength="2" placeholder="Paste emoji..." style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border-glass); background: var(--input-bg); color: var(--text-main); font-size: 0.8rem; text-align: center;">
               </div>
 
               <!-- Unicode Category Tabs Selector -->
@@ -1460,16 +1660,26 @@
             <p class="subtasks-subtitle" data-lang="subtasks_help">Habit marks finished only when all sub-tasks are ticked.</p>
             
             <div class="subtasks-builder-workspace">
-              <div class="subtasks-input-row">
-                <input type="text" id="new-subtask-input" placeholder="e.g. Drink water, Stretch 5 mins, Skincare retinol" data-lang-placeholder="subtask_input_placeholder">
-                <button type="button" class="border-btn" id="btn-add-subtask-to-list">
-                  <i data-lucide="plus"></i>
-                  <span data-lang="btn_add_task">Add Task</span>
-                </button>
-              </div>
               <ul class="subtasks-builder-list" id="modal-subtasks-builder-list">
                 <!-- Checklist items loaded dynamically -->
               </ul>
+
+              <!-- Trigger Add Task Button (placed below existing tasks) -->
+              <button type="button" class="btn-trigger-add-subtask" id="btn-trigger-add-subtask">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <span data-lang="btn_add_task">Add Task</span>
+              </button>
+
+              <!-- Inline subtask input field container (revealed when trigger clicked) -->
+              <div class="subtasks-input-container" id="subtasks-input-container" style="display: none;">
+                <div class="subtasks-input-row">
+                  <input type="text" id="new-subtask-input" placeholder="e.g. Drink water, Stretch 5 mins, Skincare retinol" data-lang-placeholder="subtask_input_placeholder">
+                </div>
+                <div class="subtasks-input-row-actions">
+                  <button type="button" class="subtask-action-btn cancel" id="btn-cancel-add-subtask" data-lang="btn_cancel">Cancel</button>
+                  <button type="button" class="subtask-action-btn ok" id="btn-add-subtask-to-list" data-lang="btn_okay">Okay</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1477,7 +1687,7 @@
             <div class="left-buttons" style="display: flex; gap: 0.5rem;">
               <button type="button" class="border-btn" id="btn-delete-habit-creator" style="display: none; border-color: var(--color-rose); color: var(--color-rose);">
                 <i data-lucide="trash-2"></i>
-                <span style="margin-left: 0.25rem;">Move to Trash</span>
+                <span style="margin-left: 0.25rem;">Trash</span>
               </button>
               <button type="button" class="border-btn" id="btn-archive-habit-creator" style="display: none; border-color: var(--color-amber); color: var(--color-amber);">
                 <i data-lucide="archive"></i>
@@ -1638,6 +1848,12 @@
               </label>
               <p style="font-size: 0.65rem; color: var(--text-darker); margin-top: 0.2rem; line-height: 1.3;">Shows a warning badge if the habit has not been completed today.</p>
             </div>
+            
+            <div style="margin-top: 1rem; border-top: 1px solid var(--border-glass); padding-top: 1rem; text-align: left;">
+              <button type="button" class="accent-glow-btn" id="btn-widget-generate-real" style="width: 100%; padding: 0.6rem; font-size: 0.8rem; font-weight: bold; border: none; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                📱 Add to Real Home Screen
+              </button>
+            </div>
           </div>
 
           <!-- Virtual Widget Canvas -->
@@ -1706,16 +1922,16 @@
 
         <!-- UNLOCKED PANEL -->
         <div id="hidden-inventory-unlocked-panel" style="display: none; padding: 0;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass); border-radius: 12px; padding: 0.75rem 1rem;">
-            <div style="text-align: left;">
-               <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">Session Active</span>
-               <span style="font-weight: 700; font-size: 0.85rem; color: #10b981;">Vault Fully Decrypted</span>
+          <div class="vault-session-banner">
+            <div class="vault-session-info">
+               <span class="vault-session-title">Session Active</span>
+               <span class="vault-session-status">Vault Fully Decrypted</span>
             </div>
-            <div style="display: flex; gap: 0.5rem;">
-              <button type="button" class="border-btn" id="btn-reset-hidden-inventory-passcode" style="padding: 0.4rem 0.8rem; font-size: 0.75rem; border-color: var(--color-amber); color: var(--color-amber); display: flex; align-items: center; gap: 0.25rem;">
+            <div class="vault-session-actions">
+              <button type="button" class="border-btn" id="btn-reset-hidden-inventory-passcode">
                 <i data-lucide="key" style="width: 14px; height: 14px;"></i> Reset Passcode
               </button>
-              <button type="button" class="border-btn" id="btn-lock-hidden-inventory" style="padding: 0.4rem 0.8rem; font-size: 0.75rem; border-color: var(--color-rose); color: var(--color-rose); display: flex; align-items: center; gap: 0.25rem;">
+              <button type="button" class="border-btn" id="btn-lock-hidden-inventory">
                 <i data-lucide="lock" style="width: 14px; height: 14px;"></i> Lock Vault
               </button>
             </div>
@@ -1728,7 +1944,52 @@
 
       </div>
       <div class="modal-footer-row" style="padding: 1rem 1.5rem; justify-content: flex-end; margin: 0; border-top: 1px solid var(--border-glass);">
-        <button type="button" class="border-btn" id="btn-close-hidden-inventory-modal-footer">Close</button>
+        <button type="button" class="border-btn" id="btn-close-hidden-inventory-modal-footer" style="border-color: rgba(139, 92, 246, 0.45); color: #c084fc; background: rgba(139, 92, 246, 0.06); font-weight: 700;">Close Vault</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= DIALOG 7: ARCHIVE VAULT MODAL ================= -->
+  <div class="modal-overlay" id="modal-archive-vault" style="z-index: 3000;">
+    <div class="modal-card modal-lg" style="max-width: 600px; width: 95%;">
+      <div class="modal-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <i data-lucide="archive" class="text-amber"></i> Archive Vault
+        </h3>
+        <button class="modal-close-btn" id="btn-close-archive-modal">&times;</button>
+      </div>
+      <div class="modal-body overflow-y-auto" style="padding: 1.5rem; text-align: left;">
+        <p class="archive-vault-intro" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.4;">Paused/archived habits are temporarily stored here. They are hidden from active views but retain all histories. You can restore them or move them to Trash.</p>
+        <div class="archived-habits-list-holder" id="archived-habits-vault" style="min-height: 80px; display: flex; flex-direction: column; gap: 0.5rem;">
+          <!-- Archived habits list injected here -->
+        </div>
+      </div>
+      <div class="modal-footer-row" style="padding: 1rem 1.5rem; justify-content: flex-end; margin: 0; border-top: 1px solid var(--border-glass);">
+        <button type="button" class="border-btn" id="btn-close-archive-modal-footer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= DIALOG 8: TRASH VAULT MODAL ================= -->
+  <div class="modal-overlay" id="modal-trash-vault" style="z-index: 3000;">
+    <div class="modal-card modal-lg" style="max-width: 600px; width: 95%;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <i data-lucide="trash-2" class="text-rose"></i> Trash Vault
+        </h3>
+        <button type="button" id="btn-empty-habits-trash" class="border-btn" style="padding: 0.35rem 0.75rem; font-size: 0.75rem; border-color: var(--color-rose); color: var(--color-rose); cursor: pointer; border-radius: 6px; margin-left: auto; margin-right: 1rem;">
+          Empty Trash
+        </button>
+        <button class="modal-close-btn" id="btn-close-trash-modal" style="margin-left: 0;">&times;</button>
+      </div>
+      <div class="modal-body overflow-y-auto" style="padding: 1.5rem; text-align: left;">
+        <p class="archive-vault-intro" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.4;">Deleted habits are placed here. You can restore them to your active list or permanently delete them from the database.</p>
+        <div class="archived-habits-list-holder" id="deleted-habits-vault" style="min-height: 80px; display: flex; flex-direction: column; gap: 0.5rem;">
+          <!-- Deleted habits list injected here -->
+        </div>
+      </div>
+      <div class="modal-footer-row" style="padding: 1rem 1.5rem; justify-content: flex-end; margin: 0; border-top: 1px solid var(--border-glass);">
+        <button type="button" class="border-btn" id="btn-close-trash-modal-footer">Close</button>
       </div>
     </div>
   </div>
@@ -1788,11 +2049,16 @@
   <!-- ================= DIALOG: LIVE CAMERA CAPTURE ================= -->
   <div class="modal-overlay" id="modal-live-camera" style="z-index: 3100;">
     <div class="modal-card" style="width: 440px; max-width: 90vw; display: flex; flex-direction: column;">
-      <div class="modal-header">
-        <h3 style="font-size: 1rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 0.5rem;">
+      <div class="modal-header" style="display: flex; align-items: center; justify-content: space-between;">
+        <h3 style="font-size: 1rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
           <span>📸</span> Live Camera Capture
         </h3>
-        <button class="modal-close-btn" id="btn-close-live-camera-modal" style="background: transparent; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; line-height: 1;">&times;</button>
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <button type="button" id="btn-camera-toggle-facing" class="border-btn" title="Switch Camera" style="padding: 0.4rem 0.65rem; border-radius: 6px; font-size: 0.72rem; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); color: #fff; cursor: pointer; display: flex; align-items: center; gap: 0.25rem; transition: all 0.2s;">
+            🔄 Switch Camera
+          </button>
+          <button class="modal-close-btn" id="btn-close-live-camera-modal" style="background: transparent; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; line-height: 1;">&times;</button>
+        </div>
       </div>
       <div class="modal-body" style="padding: 1.25rem; display: flex; flex-direction: column; align-items: center; gap: 1rem; background: radial-gradient(circle at center, rgba(99, 102, 241, 0.05), transparent 85%);">
         <div style="width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--border-glass-strong); background: #000; aspect-ratio: 4/3; position: relative; display: flex; align-items: center; justify-content: center;">
@@ -1884,33 +2150,63 @@
     </div>
   </div>
 
-  <!-- Direct Drawing Toolbar Dock (Initially Hidden) -->
-  <div id="direct-draw-dock" style="display: none; position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.95); border: 1px solid var(--border-glass-strong); padding: 0.65rem 1.25rem; border-radius: 99px; backdrop-filter: blur(25px); align-items: center; gap: 0.85rem; box-shadow: 0 20px 40px rgba(0,0,0,0.65); z-index: 10000; font-family: var(--font-primary); animation: slideInDockBottom 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); max-width: 95vw; box-sizing: border-box;">
-    
-    <!-- Title / Mode -->
-    <div style="display: flex; align-items: center; gap: 0.45rem; border-right: 1px solid var(--border-glass-strong); padding-right: 0.75rem; margin-right: 0.25rem;">
-      <span style="font-size: 1.1rem;">✍️</span>
-      <span style="font-size: 0.75rem; font-weight: 800; color: #fff; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;">Draw Mode</span>
+  <!-- ================= DIALOG: DOCUMENT VIEWER ================= -->
+  <div class="modal-overlay" id="modal-document-viewer" style="z-index: 3200;">
+    <div class="modal-card" style="width: 720px; max-width: 95vw; display: flex; flex-direction: column; background: rgba(15, 23, 42, 0.98); border: 1px solid var(--border-glass-strong); padding: 1.5rem; border-radius: 20px;">
+      <div class="modal-header" style="border-bottom: none; padding-bottom: 0; display: flex; align-items: center; justify-content: space-between;">
+        <h3 id="document-viewer-title" style="font-size: 1.05rem; font-weight: 800; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; max-width: 80%;">
+          Document Viewer
+        </h3>
+        <button class="modal-close-btn" onclick="document.getElementById('modal-document-viewer').classList.remove('active');" style="background: transparent; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; line-height: 1;">&times;</button>
+      </div>
+      <div class="modal-body" id="document-viewer-body" style="padding: 1.25rem 0; min-height: 250px; display: flex; flex-direction: column; justify-content: center;">
+        <!-- Dynamic content goes here -->
+      </div>
+      <div class="modal-footer" style="border-top: none; padding-top: 0; display: flex; gap: 0.65rem; justify-content: flex-end; align-items: center;">
+        <button type="button" onclick="document.getElementById('modal-document-viewer').classList.remove('active');" class="border-btn" style="padding: 0.55rem 1rem; border-radius: 10px; font-size: 0.78rem; font-weight: 700; color: #fff; border-color: var(--border-glass); cursor: pointer; background: transparent;">Close</button>
+      </div>
     </div>
+  </div>
 
-    <!-- Brush Selector Dropdown -->
-    <div style="display: flex; align-items: center; gap: 0.35rem; border-right: 1px solid var(--border-glass-strong); padding-right: 0.75rem; margin-right: 0.25rem;">
-      <select id="draw-dock-brush-type" style="background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border-glass); border-radius: 30px; color: #fff; padding: 0.4rem 0.75rem; font-size: 0.72rem; font-weight: 700; outline: none; cursor: pointer; transition: all 0.2s; font-family: var(--font-primary);">
-        <option value="pen" style="background: rgb(15, 23, 42); color: #fff;">🖋️ Ink Pen</option>
-        <option value="pencil" style="background: rgb(15, 23, 42); color: #fff;">✏️ Pencil</option>
-        <option value="brush" style="background: rgb(15, 23, 42); color: #fff;">🖌️ Soft Brush</option>
-        <option value="marker" style="background: rgb(15, 23, 42); color: #fff;">🖍️ Marker</option>
-        <option value="highlighter" style="background: rgb(15, 23, 42); color: #fff;">✨ Highlighter</option>
-        <option value="glow" style="background: rgb(15, 23, 42); color: #fff;">🌟 Neon Glow</option>
-        <option value="eraser" style="background: rgb(15, 23, 42); color: #fff;">🧹 Eraser</option>
-        <option value="lasso" style="background: rgb(15, 23, 42); color: #fff;">✂️ Lasso selection</option>
-      </select>
+
+
+  <div id="direct-draw-dock" style="display: none; position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.95); border: 1px solid var(--border-glass-strong); padding: 0.5rem 0.85rem; border-radius: 99px; backdrop-filter: blur(25px); align-items: center; gap: 0.65rem; box-shadow: 0 20px 40px rgba(0,0,0,0.65); z-index: 10000; font-family: var(--font-primary); animation: slideInDockBottom 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); max-width: 95vw; box-sizing: border-box;">
+    
+    <!-- Hidden input to maintain backwards compatibility with existing drawing JS -->
+    <input type="hidden" id="draw-dock-brush-type" value="pen">
+
+    <!-- Sleek Icon Tools Group -->
+    <div class="draw-tools-group" style="display: flex; align-items: center; gap: 0.35rem; border-right: 1px solid var(--border-glass-strong); padding-right: 0.65rem;">
+      <button type="button" class="draw-tool-btn active" data-tool="pen" title="Ink Pen">
+        <i data-lucide="pen-tool"></i>
+      </button>
+      <button type="button" class="draw-tool-btn" data-tool="pencil" title="Pencil">
+        <i data-lucide="pencil"></i>
+      </button>
+      <button type="button" class="draw-tool-btn" data-tool="brush" title="Soft Brush">
+        <i data-lucide="brush"></i>
+      </button>
+      <button type="button" class="draw-tool-btn" data-tool="marker" title="Marker">
+        <i data-lucide="feather"></i>
+      </button>
+      <button type="button" class="draw-tool-btn" data-tool="highlighter" title="Highlighter">
+        <i data-lucide="highlighter"></i>
+      </button>
+      <button type="button" class="draw-tool-btn" data-tool="glow" title="Neon Glow">
+        <i data-lucide="sparkles"></i>
+      </button>
+      <button type="button" class="draw-tool-btn" data-tool="eraser" title="Eraser">
+        <i data-lucide="eraser"></i>
+      </button>
+      <button type="button" class="draw-tool-btn" data-tool="lasso" title="Lasso Selection">
+        <i data-lucide="scissors"></i>
+      </button>
     </div>
 
     <!-- Brush Size & Opacity Controls (Adjust Popover) -->
     <div style="position: relative; display: flex; align-items: center;">
-      <button type="button" id="btn-draw-dock-adjust" style="background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border-glass); border-radius: 30px; color: #fff; padding: 0.4rem 0.85rem; font-size: 0.72rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 0.35rem; transition: all 0.2s;">
-        <span>📐</span> Adjust <span id="indicator-brush-size" style="background: rgba(255,255,255,0.15); padding: 0.1rem 0.4rem; border-radius: 10px; font-size: 0.65rem;">5px</span>
+      <button type="button" id="btn-draw-dock-adjust" class="draw-tool-btn" title="Adjust Brush Size & Opacity">
+        <i data-lucide="sliders"></i>
       </button>
       
       <!-- Popover: Size & Opacity -->
@@ -1934,10 +2230,9 @@
     </div>
 
     <!-- Color Palette Row (Colors Popover) -->
-    <div style="position: relative; display: flex; align-items: center; border-right: 1px solid var(--border-glass-strong); padding-right: 0.75rem; margin-right: 0.25rem;">
-      <button type="button" id="btn-draw-dock-colors" style="background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border-glass); border-radius: 30px; color: #fff; padding: 0.4rem 0.85rem; font-size: 0.72rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 0.45rem; transition: all 0.2s;">
-        <span id="indicator-brush-color-dot" style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ffffff; border: 1px solid rgba(255,255,255,0.5);"></span>
-        <span>Colors</span>
+    <div style="position: relative; display: flex; align-items: center; border-right: 1px solid var(--border-glass-strong); padding-right: 0.65rem; margin-right: 0.25rem;">
+      <button type="button" id="btn-draw-dock-colors" class="draw-tool-btn" title="Brush Color">
+        <span id="indicator-brush-color-dot" style="display: block; width: 14px; height: 14px; border-radius: 50%; background: #ffffff; border: 1px solid rgba(255,255,255,0.4);"></span>
       </button>
       
       <!-- Popover: Color Palette -->
@@ -1958,16 +2253,71 @@
       </div>
     </div>
 
-    <!-- Actions: Undo, Redo, Clear, Exit -->
-    <div style="display: flex; align-items: center; gap: 0.5rem;">
-      <button type="button" id="btn-draw-dock-undo" style="background: transparent; border: none; color: #fff; font-size: 0.95rem; cursor: pointer; padding: 0.2rem; transition: transform 0.2s;" title="Undo stroke" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'">↩️</button>
-      <button type="button" id="btn-draw-dock-redo" style="background: transparent; border: none; color: #fff; font-size: 0.95rem; cursor: pointer; padding: 0.2rem; transition: transform 0.2s;" title="Redo stroke" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'">↪️</button>
-      <button type="button" id="btn-draw-dock-clear" style="background: transparent; border: none; color: #fff; font-size: 0.95rem; cursor: pointer; padding: 0.2rem; transition: transform 0.2s;" title="Clear Drawing" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'">🗑️</button>
-      <button type="button" id="btn-draw-dock-save" class="accent-glow-btn" style="padding: 0.45rem 1.1rem; border-radius: 20px; font-size: 0.72rem; font-weight: 700; border: none; cursor: pointer;" title="Save & Close Draw Mode">✔️ Done</button>
+    <!-- Actions: Undo, Redo, Clear, Done -->
+    <div style="display: flex; align-items: center; gap: 0.35rem;">
+      <button type="button" id="btn-draw-dock-undo" class="draw-tool-btn" title="Undo stroke">
+        <i data-lucide="undo"></i>
+      </button>
+      <button type="button" id="btn-draw-dock-redo" class="draw-tool-btn" title="Redo stroke">
+        <i data-lucide="redo"></i>
+      </button>
+      <button type="button" id="btn-draw-dock-clear" class="draw-tool-btn text-danger" title="Clear Drawing" style="color: #f87171;">
+        <i data-lucide="trash-2"></i>
+      </button>
+      <button type="button" id="btn-draw-dock-save" class="draw-tool-btn success" title="Done" style="background: var(--color-indigo); color: #fff; border-radius: 50%;">
+        <i data-lucide="check"></i>
+      </button>
     </div>
   </div>
 
   <style>
+    @keyframes authSpinner {
+      to { transform: rotate(360deg); }
+    }
+    .auth-success-spinner {
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #10b981;
+      border-radius: 50%;
+      width: 18px;
+      height: 18px;
+      animation: authSpinner 0.8s linear infinite;
+    }
+    @keyframes successBounce {
+      0% { transform: scale(0.3); opacity: 0; }
+      50% { transform: scale(1.15); }
+      70% { transform: scale(0.9); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .draw-tool-btn {
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      color: var(--text-muted);
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      padding: 0;
+    }
+    .draw-tool-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+    .draw-tool-btn.active {
+      background: rgba(99, 102, 241, 0.2);
+      color: #818cf8;
+      box-shadow: 0 0 8px rgba(99, 102, 241, 0.3);
+    }
+    .draw-tool-btn i, .draw-tool-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+    .draw-tool-btn.success:hover {
+      background: #4f46e5 !important;
+    }
     .draw-palette-dot:hover {
       transform: scale(1.25) !important;
     }
@@ -1996,20 +2346,1145 @@
         margin-right: 0 !important;
       }
     }
+    /* Mobile responsive overrides for Notifications & Calendar Popovers */
+    @media (max-width: 768px), (orientation: portrait) {
+      .notifications-dropdown {
+        position: fixed !important;
+        top: 50% !important;
+        left: 50% !important;
+        right: auto !important;
+        transform: translate(-50%, -50%) !important;
+        from { opacity: 0; transform: translate(-50%, -45%) scale(0.95); }
+        to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      }
+    }
+    #btn-notes-mobile-back:hover {
+      background: rgba(15, 23, 42, 0.85) !important;
+      transform: scale(1.08);
+      border-color: rgba(255, 255, 255, 0.3) !important;
+    }
+    #btn-notes-mobile-back:active {
+      transform: scale(0.95);
+    }
+
+    /* Premium Spotify-Inspired Auth Modal Styles */
+    .auth-logo-header {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    .auth-logo-icon {
+      font-size: 2.2rem;
+      background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 800;
+      letter-spacing: -1.5px;
+      display: inline-block;
+      margin-bottom: 0.25rem;
+    }
+    .auth-logo-subtitle {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .auth-sso-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      margin-bottom: 1.5rem;
+    }
+    .auth-sso-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      width: 100%;
+      padding: 0.7rem 1.25rem;
+      border-radius: 50px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #fff;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .auth-sso-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: translateY(-1px);
+    }
+    .auth-sso-btn:active {
+      transform: translateY(1px);
+    }
+    .auth-sso-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+    .auth-divider {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      margin: 1.5rem 0;
+    }
+    .auth-divider::before,
+    .auth-divider::after {
+      content: '';
+      flex: 1;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .auth-divider:not(:empty)::before {
+      margin-right: .75em;
+    }
+    .auth-divider:not(:empty)::after {
+      margin-left: .75em;
+    }
+    .auth-input-group {
+      margin-bottom: 1.25rem;
+    }
+    .auth-input-group label {
+      display: block;
+      margin-bottom: 0.45rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .auth-input-group input,
+    .auth-input-group select {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 50px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(0, 0, 0, 0.25);
+      color: #fff;
+      font-size: 0.88rem;
+      transition: all 0.2s ease;
+      outline: none;
+    }
+    .auth-input-group input:focus,
+    .auth-input-group select:focus {
+      border-color: #818cf8;
+      box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.25);
+      background: rgba(0, 0, 0, 0.35);
+    }
+    .auth-pass-wrapper {
+      position: relative;
+      width: 100%;
+    }
+    .auth-pass-wrapper input {
+      padding-right: 2.75rem;
+    }
+    .auth-pass-toggle {
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      font-size: 1.1rem;
+      opacity: 0.6;
+      transition: opacity 0.2s ease;
+    }
+    .auth-pass-toggle:hover {
+      opacity: 0.9;
+    }
+    .auth-remember-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+      font-size: 0.82rem;
+    }
+    .auth-remember-left {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+    .auth-remember-left input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: #6366f1;
+      cursor: pointer;
+    }
+    .auth-forgot-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+    .auth-forgot-link:hover {
+      color: #fff;
+      text-decoration: underline;
+    }
+    .auth-submit-btn {
+      width: 100%;
+      padding: 0.8rem;
+      border-radius: 50px;
+      font-weight: 700;
+      border: none;
+      background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
+      color: #fff;
+      font-size: 0.95rem;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+      transition: all 0.25s ease;
+    }
+    .auth-submit-btn:disabled,
+    .auth-secondary-btn:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      transform: none !important;
+      filter: none !important;
+    }
+    .auth-submit-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(99, 102, 241, 0.45);
+      filter: brightness(1.1);
+    }
+    .auth-submit-btn:active {
+      transform: translateY(1px);
+    }
+    .auth-footer {
+      margin-top: 1.5rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding-top: 1.25rem;
+    }
+    .auth-footer a {
+      color: #fff;
+      text-decoration: none;
+      font-weight: 700;
+      margin-left: 0.25rem;
+    }
+    .auth-footer a:hover {
+      text-decoration: underline;
+    }
+    .auth-secondary-btn {
+      width: 100%;
+      margin-top: 0.75rem;
+      padding: 0.78rem;
+      border-radius: 50px;
+      font-weight: 700;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.05);
+      color: #fff;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .auth-secondary-btn:hover {
+      background: rgba(255,255,255,0.09);
+      border-color: rgba(255,255,255,0.24);
+    }
+    .auth-feedback {
+      margin: 0 0 1rem;
+      padding: 0.75rem 0.9rem;
+      border-radius: 14px;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.04);
+      color: var(--text-muted);
+    }
+    .auth-feedback.error {
+      border-color: rgba(244,63,94,0.45);
+      background: rgba(244,63,94,0.12);
+      color: #fecdd3;
+    }
+    .auth-feedback.success {
+      border-color: rgba(16,185,129,0.45);
+      background: rgba(16,185,129,0.12);
+      color: #bbf7d0;
+    }
+    .auth-helper {
+      margin: -0.75rem 0 1rem;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      line-height: 1.4;
+    }
+    .auth-field-error {
+      display: block;
+      min-height: 1rem;
+      margin-top: 0.35rem;
+      font-size: 0.73rem;
+      color: #fda4af;
+    }
+    .auth-strength-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.35rem 0.65rem;
+      margin: -0.55rem 0 1rem;
+      padding: 0;
+      list-style: none;
+      color: var(--text-muted);
+      font-size: 0.72rem;
+    }
+    .auth-strength-list li.valid {
+      color: #86efac;
+    }
+    .auth-code-input {
+      text-align: center;
+      font-size: 1.55rem !important;
+      letter-spacing: 0.32rem;
+      font-weight: 800;
+      font-family: var(--font-mono);
+    }
+    @media (max-width: 520px) {
+      #modal-account-auth .modal-card {
+        width: calc(100vw - 24px) !important;
+        padding: 1.75rem 1.25rem !important;
+        border-radius: 16px !important;
+      }
+      .auth-strength-list {
+        grid-template-columns: 1fr;
+      }
+      .auth-remember-row {
+        align-items: flex-start;
+        gap: 0.75rem;
+        flex-direction: column;
+      }
+    }
+
+    /* Premium Welcome Onboarding Screen Animations & Styles */
+    @keyframes logoPulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.25; }
+      50% { transform: translate(-50%, -50%) scale(1.15); opacity: 0.45; }
+    }
+    @keyframes logoFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+    @keyframes welcomeSlideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    @keyframes welcomeFadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .welcome-logo-badge {
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .welcome-logo-badge:hover {
+      transform: scale(1.05) rotate(3deg) !important;
+    }
+    #btn-welcome-signup {
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #btn-welcome-signup:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(99, 102, 241, 0.5) !important;
+    }
+    #btn-welcome-signup:active {
+      transform: translateY(0);
+    }
+    #btn-welcome-login {
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #btn-welcome-login:hover {
+      background: rgba(255, 255, 255, 0.08) !important;
+      border-color: rgba(255, 255, 255, 0.2) !important;
+      color: #fff !important;
+      transform: translateY(-2px);
+    }
+    #btn-welcome-login:active {
+      transform: translateY(0);
+    }
   </style>
 
-  <!-- Main JavaScript App Controller (app.js) -->
-  <script type="module" src="app-v2.js?v=1.5.7"></script>
+  <!-- ================= DIALOG: EXIT APP CONFIRMATION MODAL ================= -->
+  <div class="modal-overlay" id="modal-exit-confirm" style="z-index: 3400; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); background: rgba(8, 10, 19, 0.75);">
+    <div class="modal-card" style="max-width: 320px; width: 100%; text-align: center; padding: 2.25rem 1.75rem; background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 24px; box-shadow: 0 30px 60px rgba(0,0,0,0.8);">
+      <div style="margin-bottom: 1.25rem; display: flex; justify-content: center;">
+        <div style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.05) 100%); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 50%; padding: 0.95rem; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px rgba(239, 68, 68, 0.1);">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 2px 8px rgba(239, 68, 68, 0.35));">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </div>
+      </div>
+      <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.4rem; font-weight: 700; color: #fff; margin: 0 0 0.5rem 0; letter-spacing: -0.02em;">Exit DnD?</h3>
+      <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 1.75rem; line-height: 1.6; font-weight: 400; padding: 0 0.25rem;">Are you sure you want to close the application? Your active habit streaks and notes are saved locally.</p>
+      <div style="display: flex; gap: 0.75rem; justify-content: center; width: 100%;">
+        <button type="button" id="btn-exit-cancel" style="flex: 1; padding: 0.8rem; border-radius: 50px; font-weight: 700; font-size: 0.9rem; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.06); color: #e2e8f0; cursor: pointer; transition: all 0.2s ease; font-family: 'Outfit', sans-serif;" onmouseover="this.style.background='rgba(255,255,255,0.1)'; this.style.borderColor='rgba(255,255,255,0.2)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(255,255,255,0.06)'; this.style.borderColor='rgba(255,255,255,0.1)'; this.style.color='#e2e8f0';">Cancel</button>
+        <button type="button" id="btn-exit-confirm" style="flex: 1; padding: 0.8rem; border-radius: 50px; font-weight: 700; font-size: 0.9rem; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); border: 1px solid rgba(239,68,68,0.2); color: #fff; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3); font-family: 'Outfit', sans-serif;" onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 6px 18px rgba(239, 68, 68, 0.45)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 14px rgba(239, 68, 68, 0.3)';" onmousedown="this.style.transform='translateY(1px) scale(0.98)';">Exit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating install banner (Android / Chrome) -->
+  <div id="pwa-install-banner" class="pwa-install-banner" hidden>
+    <div class="pwa-install-banner-inner">
+      <img src="/icon_192.png" alt="" class="pwa-install-banner-icon" width="44" height="44">
+      <div class="pwa-install-banner-text">
+        <strong data-lang="pwa_banner_title">Install DnD App</strong>
+        <span data-lang="pwa_banner_desc">Add to home screen for offline habits & streaks</span>
+      </div>
+      <button type="button" class="accent-glow-btn pwa-install-banner-btn" id="btn-pwa-install-banner" data-lang="btn_install_app">Install</button>
+      <button type="button" class="pwa-install-banner-dismiss" id="btn-pwa-install-dismiss" aria-label="Dismiss">&times;</button>
+    </div>
+  </div>
+
+  <!-- iOS install instructions modal -->
+  <div class="modal-overlay" id="modal-pwa-ios-install">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 data-lang="pwa_ios_title">Install on iPhone / iPad</h3>
+        <button type="button" class="modal-close-btn" id="btn-close-pwa-ios-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <ol class="pwa-ios-steps">
+          <li>Tap the <strong>Share</strong> button <span class="pwa-ios-share-icon">⎋</span> in Safari's toolbar.</li>
+          <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+          <li>Tap <strong>Add</strong> — DnD will open like a native app!</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <script src="db.js?v=1.9.9"></script>
+  <script src="audio.js?v=1.9.9"></script>
+  <script src="demo.js?v=1.9.9"></script>
+  <script src="app-v2.js?v=1.9.11"></script>
   
-  <!-- PWA Service Worker Registration -->
+  <!-- PWA Service Worker & Install UI -->
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
-          .then(reg => console.log('Service Worker registered successfully!', reg))
-          .catch(err => console.error('Service Worker registration failed:', err));
+    (function initPwa() {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+        || window.navigator.standalone === true;
+      const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+        && !window.MSStream;
+
+      const banner = document.getElementById('pwa-install-banner');
+      const settingsRow = document.getElementById('pwa-install-settings-row');
+      const settingsDesc = document.getElementById('pwa-install-settings-desc');
+      const iosModal = document.getElementById('modal-pwa-ios-install');
+
+      const hideInstallUi = () => {
+        if (banner) banner.hidden = true;
+        if (settingsRow) settingsRow.style.display = 'none';
+      };
+
+      const showBanner = () => {
+        if (isStandalone) return;
+        if (banner && localStorage.getItem('pwa-install-dismissed') !== '1') {
+          banner.hidden = false;
+        }
+      };
+
+      const triggerInstall = async () => {
+        const prompt = window.__deferredInstallPrompt;
+        if (prompt) {
+          prompt.prompt();
+          await prompt.userChoice;
+          window.__deferredInstallPrompt = null;
+          hideInstallUi();
+          return;
+        }
+        if (isIOS && iosModal) {
+          iosModal.classList.add('active');
+        }
+      };
+
+      if (isStandalone) {
+        hideInstallUi();
+      } else if (isIOS && settingsDesc) {
+        settingsDesc.textContent = 'Tap Install, then use Safari Share → Add to Home Screen.';
+      }
+
+      document.getElementById('btn-pwa-install-banner')?.addEventListener('click', triggerInstall);
+      document.getElementById('btn-pwa-install-settings')?.addEventListener('click', triggerInstall);
+      document.getElementById('btn-pwa-install-dismiss')?.addEventListener('click', () => {
+        localStorage.setItem('pwa-install-dismissed', '1');
+        if (banner) banner.hidden = true;
       });
-    }
+      document.getElementById('btn-close-pwa-ios-modal')?.addEventListener('click', () => {
+        iosModal?.classList.remove('active');
+      });
+      iosModal?.addEventListener('click', (e) => {
+        if (e.target === iosModal) iosModal.classList.remove('active');
+      });
+
+      window.addEventListener('pwa-install-available', showBanner);
+      window.addEventListener('pwa-installed', hideInstallUi);
+      if (window.__deferredInstallPrompt) showBanner();
+
+      if ('serviceWorker' in navigator && !window.Capacitor) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('sw.js')
+            .then((reg) => {
+              reg.addEventListener('updatefound', () => {
+                const newWorker = reg.installing;
+                if (newWorker) {
+                  newWorker.addEventListener('statechange', () => {
+                    if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+                      window.location.reload();
+                    }
+                  });
+                }
+              });
+            })
+            .catch((err) => console.error('Service Worker registration failed:', err));
+        });
+
+        window.addEventListener('focus', () => {
+          navigator.serviceWorker.getRegistration().then((reg) => {
+            if (reg) reg.update();
+          });
+        });
+      }
+    })();
   </script>
+
+  <!-- ================= DIALOG 5B: REAL WIDGET SETUP INSTRUCTIONS ================= -->
+  <div class="modal-overlay" id="modal-widget-instructions" style="z-index: 3200;">
+    <div class="modal-card" style="width: 460px; max-width: 90vw; display: flex; flex-direction: column; background: rgba(15, 23, 42, 0.98); border: 1px solid var(--border-glass-strong); padding: 1.5rem; border-radius: 20px;">
+      <div class="modal-header" style="border-bottom: none; padding-bottom: 0; display: flex; align-items: center; justify-content: space-between;">
+        <h3 style="font-size: 1.1rem; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <span>📱</span> Real Home Screen Widget Setup
+        </h3>
+        <button class="modal-close-btn" id="btn-close-widget-instructions" style="background: transparent; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; line-height: 1;">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 1rem 0; text-align: left; display: flex; flex-direction: column; gap: 1rem; color: var(--text-main); font-size: 0.85rem; line-height: 1.5;">
+        <p>You can add this customized habit widget directly to your real phone's home screen as a standalone fullscreen widget application.</p>
+        
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); padding: 0.85rem; border-radius: 12px; display: flex; flex-direction: column; gap: 0.5rem;">
+          <strong style="color: #fff; font-size: 0.8rem; text-transform: uppercase;">Your Widget URL Link:</strong>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input type="text" id="widget-generated-url-input" readonly style="flex-grow: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border-glass); border-radius: 6px; padding: 0.4rem 0.6rem; color: #818cf8; font-size: 0.75rem; outline: none; font-family: monospace;">
+            <button type="button" class="border-btn" id="btn-widget-copy-link" style="padding: 0.4rem 0.75rem; font-size: 0.75rem; border-radius: 6px; font-weight: bold; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); color: #fff; cursor: pointer;">
+              Copy
+            </button>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.65rem;">
+          <h4 style="margin: 0; font-weight: 700; color: #fff;">Setup Instructions:</h4>
+          
+          <div style="display: flex; gap: 0.5rem; align-items: flex-start;">
+            <div style="background: var(--color-indigo); color: #fff; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">1</div>
+            <div>Click <strong>Copy</strong> above to copy your customized widget link.</div>
+          </div>
+          
+          <div style="display: flex; gap: 0.5rem; align-items: flex-start;">
+            <div style="background: var(--color-indigo); color: #fff; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">2</div>
+            <div>Open a new tab in your mobile browser (<strong>Safari</strong> on iOS or <strong>Chrome</strong> on Android) and paste the link.</div>
+          </div>
+          
+          <div style="display: flex; gap: 0.5rem; align-items: flex-start;">
+            <div style="background: var(--color-indigo); color: #fff; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">3</div>
+            <div>
+              Tap the browser's menu option:
+              <ul style="margin: 0.25rem 0 0 1rem; padding-left: 0;">
+                <li><strong>iOS (Safari)</strong>: Tap the Share button (<i data-lucide="share" style="width:12px; height:12px; display:inline-block; vertical-align:middle;"></i>) and select <strong>"Add to Home Screen"</strong>.</li>
+                <li><strong>Android (Chrome)</strong>: Tap the three dots menu (<i data-lucide="more-vertical" style="width:12px; height:12px; display:inline-block; vertical-align:middle;"></i>) and select <strong>"Add to Home screen"</strong>.</li>
+              </ul>
+            </div>
+        });
+
+        window.addEventListener('focus', () => {
+          navigator.serviceWorker.getRegistration().then((reg) => {
+            if (reg) reg.update();
+          });
+        });
+      }
+    })();
+  </script>
+
+  <!-- ================= DIALOG 5B: REAL WIDGET SETUP INSTRUCTIONS ================= -->
+  <div class="modal-overlay" id="modal-widget-instructions" style="z-index: 3200;">
+    <div class="modal-card" style="width: 460px; max-width: 90vw; display: flex; flex-direction: column; background: rgba(15, 23, 42, 0.98); border: 1px solid var(--border-glass-strong); padding: 1.5rem; border-radius: 20px;">
+      <div class="modal-header" style="border-bottom: none; padding-bottom: 0; display: flex; align-items: center; justify-content: space-between;">
+        <h3 style="font-size: 1.1rem; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <span>📱</span> Real Home Screen Widget Setup
+        </h3>
+        <button class="modal-close-btn" id="btn-close-widget-instructions" style="background: transparent; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; line-height: 1;">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 1rem 0; text-align: left; display: flex; flex-direction: column; gap: 1rem; color: var(--text-main); font-size: 0.85rem; line-height: 1.5;">
+        <p>You can add this customized habit widget directly to your real phone's home screen as a standalone fullscreen widget application.</p>
+        
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); padding: 0.85rem; border-radius: 12px; display: flex; flex-direction: column; gap: 0.5rem;">
+          <strong style="color: #fff; font-size: 0.8rem; text-transform: uppercase;">Your Widget URL Link:</strong>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input type="text" id="widget-generated-url-input" readonly style="flex-grow: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border-glass); border-radius: 6px; padding: 0.4rem 0.6rem; color: #818cf8; font-size: 0.75rem; outline: none; font-family: monospace;">
+            <button type="button" class="border-btn" id="btn-widget-copy-link" style="padding: 0.4rem 0.75rem; font-size: 0.75rem; border-radius: 6px; font-weight: bold; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); color: #fff; cursor: pointer;">
+              Copy
+            </button>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.65rem;">
+          <h4 style="margin: 0; font-weight: 700; color: #fff;">Setup Instructions:</h4>
+          
+          <div style="display: flex; gap: 0.5rem; align-items: flex-start;">
+            <div style="background: var(--color-indigo); color: #fff; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">1</div>
+            <div>Click <strong>Copy</strong> above to copy your customized widget link.</div>
+          </div>
+          
+          <div style="display: flex; gap: 0.5rem; align-items: flex-start;">
+            <div style="background: var(--color-indigo); color: #fff; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">2</div>
+            <div>Open a new tab in your mobile browser (<strong>Safari</strong> on iOS or <strong>Chrome</strong> on Android) and paste the link.</div>
+          </div>
+          
+          <div style="display: flex; gap: 0.5rem; align-items: flex-start;">
+            <div style="background: var(--color-indigo); color: #fff; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">3</div>
+            <div>
+              Tap the browser's menu option:
+              <ul style="margin: 0.25rem 0 0 1rem; padding-left: 0;">
+                <li><strong>iOS (Safari)</strong>: Tap the Share button (<i data-lucide="share" style="width:12px; height:12px; display:inline-block; vertical-align:middle;"></i>) and select <strong>"Add to Home Screen"</strong>.</li>
+                <li><strong>Android (Chrome)</strong>: Tap the three dots menu (<i data-lucide="more-vertical" style="width:12px; height:12px; display:inline-block; vertical-align:middle;"></i>) and select <strong>"Add to Home screen"</strong>.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <p style="font-size: 0.72rem; color: var(--text-darker); margin: 0; border-top: 1px solid var(--border-glass); padding-top: 0.75rem; text-align: center;">
+          💡 Tip: Tapping the widget icon on your home screen opens it directly in fullscreen matching your configurations!
+        </p>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 0.5rem;">
+        <button type="button" class="accent-glow-btn" id="btn-close-widget-instructions-footer" style="padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.8rem; font-weight: bold; border: none; cursor: pointer; background: var(--color-indigo); color: #fff;">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= DIALOG: WEB FULLSCREEN AUTH OVERLAY ================= -->
+  <div id="web-auth-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #090d16; z-index: 3500; align-items: center; justify-content: center; padding: 1.5rem; box-sizing: border-box; overflow-y: auto; font-family: var(--font-primary);">
+    <div class="modal-card" style="max-width: 440px; width: 100%; border-radius: 20px; padding: 2.2rem 2rem; border: 1px solid rgba(255,255,255,0.08); background: rgba(15, 23, 42, 0.95); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); position: relative;">
+      <!-- Back to Welcome button -->
+      <button type="button" id="btn-auth-back-to-welcome" style="display: none; position: absolute; top: 1.25rem; left: 1.25rem; background: none; border: none; color: #94a3b8; cursor: pointer; padding: 0.25rem; transition: all 0.2s; z-index: 100; border-radius: 50%;" onmouseover="this.style.color='#fff'; this.style.background='rgba(255,255,255,0.06)'" onmouseout="this.style.color='#94a3b8'; this.style.background='none'">
+        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display: block;"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+      </button>
+
+      <!-- VIEW: SUCCESS STATE -->
+      <div id="web-signup-success-view" style="display: none; flex-direction: column; align-items: center; text-align: center; width: 100%; padding: 1rem 0;">
+        <div class="success-icon-container" style="margin-bottom: 2rem; position: relative;">
+          <!-- Glowing background pulse -->
+          <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100px; height: 100px; background: radial-gradient(circle, rgba(16, 185, 129, 0.25) 0%, rgba(16, 185, 129, 0) 70%); border-radius: 50%; filter: blur(8px);"></div>
+          <!-- Bouncing Circle -->
+          <div style="width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, #10b981 0%, #059669 100%); display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.4); border: 2px solid rgba(255, 255, 255, 0.2); animation: successBounce 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;">
+            <svg viewBox="0 0 24 24" width="36" height="36" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display: block;">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+        </div>
+        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.6rem; font-weight: 800; color: #fff; margin: 0 0 0.75rem 0; letter-spacing: -0.5px;">Verification Successful</h3>
+        <p style="font-size: 0.9rem; color: #94a3b8; line-height: 1.5; margin: 0 0 2rem 0; max-width: 320px;">
+          Your account is verified and secured. Preparing your dashboard...
+        </p>
+        <div style="display: flex; align-items: center; gap: 0.5rem; justify-content: center;">
+          <div class="auth-success-spinner" style="width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.1); border-top-color: #10b981; border-radius: 50%; animation: authSpinner 0.8s linear infinite;"></div>
+          <span style="font-size: 0.85rem; color: #64748b; font-weight: 600;">Securing session...</span>
+        </div>
+      </div>
+
+      <!-- VIEW: GOOGLE ACCOUNT SELECTION -->
+      <div id="web-google-auth-view" style="display: none; flex-direction: column; align-items: center; width: 100%; animation: welcomeFadeIn 0.5s ease;">
+        <div style="margin-bottom: 1.5rem; text-align: center;">
+          <span style="font-family: 'Outfit', sans-serif; font-size: 2.2rem; font-weight: 800; color: #fff; letter-spacing: -1.5px;">DnD</span>
+        </div>
+        
+        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.35rem; font-weight: 800; color: #ffffff; margin: 0 0 0.5rem 0; text-align: center;">Choose an account</h3>
+        <p style="font-size: 0.85rem; color: #94a3b8; text-align: center; margin-bottom: 1.5rem;">to continue to DnD. DnD will securely sign you in using Google.</p>
+
+        <!-- Loading State for Google Auth -->
+        <div id="google-auth-loading" style="display: none; flex-direction: column; align-items: center; padding: 2rem 0; width: 100%;">
+          <div class="auth-success-spinner" style="width: 32px; height: 32px; border-top-color: #4285F4; margin-bottom: 1rem; border-width: 3px;"></div>
+          <span style="font-size: 0.9rem; color: #94a3b8; font-weight: 600;">Connecting to Google...</span>
+        </div>
+
+        <!-- Account List -->
+        <div id="google-accounts-list" style="width: 100%; display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem;">
+          <!-- Account Card 1 -->
+          <div class="google-account-card" data-email="developer@gmail.com" data-name="Developer Account" data-avatar="D" style="display: flex; align-items: center; gap: 12px; padding: 0.85rem 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; cursor: pointer; transition: all 0.2s;">
+            <div style="width: 40px; height: 40px; border-radius: 50%; background: #4f46e5; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 1rem;">D</div>
+            <div style="flex: 1; text-align: left;">
+              <div style="font-size: 0.9rem; font-weight: 600; color: #fff;">Developer Account</div>
+              <div style="font-size: 0.8rem; color: #94a3b8;">developer@gmail.com</div>
+            </div>
+            <div style="color: #64748b; font-size: 0.8rem;">Signed in</div>
+          </div>
+
+          <!-- Account Card 2 -->
+          <div class="google-account-card" data-email="tester@gmail.com" data-name="Tester Account" data-avatar="T" style="display: flex; align-items: center; gap: 12px; padding: 0.85rem 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; cursor: pointer; transition: all 0.2s;">
+            <div style="width: 40px; height: 40px; border-radius: 50%; background: #10b981; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 1rem;">T</div>
+            <div style="flex: 1; text-align: left;">
+              <div style="font-size: 0.9rem; font-weight: 600; color: #fff;">Tester Account</div>
+              <div style="font-size: 0.8rem; color: #94a3b8;">tester@gmail.com</div>
+            </div>
+            <div style="color: #64748b; font-size: 0.8rem;">Signed in</div>
+          </div>
+
+          <!-- Account Card 3 -->
+          <div class="google-account-card" data-email="alex.mercer@gmail.com" data-name="Alex Mercer" data-avatar="A" style="display: flex; align-items: center; gap: 12px; padding: 0.85rem 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; cursor: pointer; transition: all 0.2s;">
+            <div style="width: 40px; height: 40px; border-radius: 50%; background: #ec4899; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 1rem;">A</div>
+            <div style="flex: 1; text-align: left;">
+              <div style="font-size: 0.9rem; font-weight: 600; color: #fff;">Alex Mercer</div>
+              <div style="font-size: 0.8rem; color: #94a3b8;">alex.mercer@gmail.com</div>
+            </div>
+            <div style="color: #64748b; font-size: 0.8rem;">Signed in</div>
+          </div>
+
+          <!-- Use Another Account Option -->
+          <div id="btn-google-use-another" style="display: flex; align-items: center; gap: 12px; padding: 0.85rem 1.25rem; border: 1px dashed rgba(255,255,255,0.15); border-radius: 12px; cursor: pointer; transition: all 0.2s; justify-content: center; margin-top: 0.25rem;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #4285F4;"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+            <span style="font-size: 0.9rem; font-weight: 700; color: #4285F4;">Use Another Account</span>
+          </div>
+        </div>
+
+        <div style="text-align: center; width: 100%;">
+          <a href="#" id="link-google-auth-back" style="color: #94a3b8; text-decoration: none; font-weight: 700; font-size: 0.85rem;">Cancel and Go Back</a>
+        </div>
+      </div>
+
+      <!-- VIEW: GOOGLE USE ANOTHER ACCOUNT (SIMULATED OFFICIAL FLOW) -->
+      <div id="web-google-another-view" style="display: none; flex-direction: column; align-items: center; width: 100%; animation: welcomeFadeIn 0.5s ease;">
+        <div style="margin-bottom: 1.5rem; text-align: center;">
+          <svg viewBox="0 0 24 24" width="38" height="38"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        </div>
+
+        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.35rem; font-weight: 800; color: #ffffff; margin: 0 0 0.5rem 0; text-align: center;">Sign In</h3>
+        <p style="font-size: 0.85rem; color: #94a3b8; text-align: center; margin-bottom: 1.5rem;">Use your Google Account</p>
+
+        <form id="google-another-email-form" style="width: 100%;">
+          <div class="auth-input-group" style="margin-bottom: 1.5rem; text-align: left;">
+            <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #94a3b8; margin-bottom: 0.45rem; text-transform: uppercase; letter-spacing: 0.5px;">Email or Phone</label>
+            <input type="email" id="google-another-email-input" required placeholder="your.email@gmail.com" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 1.25rem; color: #fff; outline: none; font-size: 0.9rem;">
+          </div>
+          
+          <button type="submit" class="auth-submit-btn" style="width: 100%; border: none; background: #4285F4; color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; margin-bottom: 1.25rem;">Next</button>
+        </form>
+
+        <form id="google-another-password-form" style="display: none; width: 100%;">
+          <div style="text-align: left; margin-bottom: 1.25rem; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 0.65rem 1rem; display: flex; align-items: center; gap: 10px;">
+            <div style="width: 32px; height: 32px; border-radius: 50%; background: #4285F4; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 0.8rem;" id="google-another-avatar-initial">?</div>
+            <div style="flex: 1; text-align: left;">
+              <div style="font-size: 0.85rem; font-weight: 600; color: #fff;" id="google-another-display-name">User</div>
+              <div style="font-size: 0.75rem; color: #94a3b8;" id="google-another-display-email">email@gmail.com</div>
+            </div>
+          </div>
+
+          <div class="auth-input-group" style="margin-bottom: 1.5rem; text-align: left; position: relative;">
+            <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #94a3b8; margin-bottom: 0.45rem; text-transform: uppercase; letter-spacing: 0.5px;">Enter your password</label>
+            <input type="password" id="google-another-password-input" required placeholder="Password" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 1.25rem; color: #fff; outline: none; font-size: 0.9rem;">
+          </div>
+          
+          <button type="submit" class="auth-submit-btn" style="width: 100%; border: none; background: #4285F4; color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; margin-bottom: 1.25rem;">Next</button>
+        </form>
+
+        <div id="google-another-mfa-view" style="display: none; width: 100%; text-align: center; padding: 0.5rem 0;">
+          <div style="margin-bottom: 1.5rem; color: #4285F4;">
+            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+          </div>
+          <h4 style="font-size: 1.1rem; font-weight: 700; color: #fff; margin: 0 0 0.5rem 0;">Check your phone</h4>
+          <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.5; margin-bottom: 1.5rem; max-width: 280px; margin-left: auto; margin-right: auto;">
+            Google sent a notification to your phone. Tap <strong>Yes</strong> on the prompt to verify it's you.
+          </p>
+          <div style="display: flex; justify-content: center; gap: 0.5rem; align-items: center; margin-bottom: 1.5rem;">
+            <div class="auth-success-spinner" style="width: 16px; height: 16px; border-top-color: #4285F4; border-width: 2px;"></div>
+            <span style="font-size: 0.8rem; color: #64748b; font-weight: 600;">Waiting for approval...</span>
+          </div>
+        </div>
+
+        <div style="text-align: center; width: 100%; margin-top: 1rem;">
+          <a href="#" id="link-google-another-back" style="color: #94a3b8; text-decoration: none; font-weight: 700; font-size: 0.85rem;">Back</a>
+        </div>
+      </div>
+
+      <!-- VIEW: EMAIL NOT REGISTERED -->
+      <div id="web-login-no-account-view" style="display: none; flex-direction: column; align-items: center; text-align: center; width: 100%; animation: welcomeFadeIn 0.5s ease;">
+        <div style="width: 64px; height: 64px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem;">
+          <svg style="width: 32px; height: 32px; color: #ef4444;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        </div>
+        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 800; color: #fff; margin: 0 0 0.5rem 0; letter-spacing: -0.5px;">No Account Found</h3>
+        <p style="font-size: 0.9rem; color: #94a3b8; line-height: 1.5; margin-bottom: 2rem;">We couldn't find an account associated with this email address.</p>
+        
+        <button type="button" id="btn-no-account-create" class="auth-submit-btn" style="width: 100%; border: none; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; margin-bottom: 1rem; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);">Create Account</button>
+        <button type="button" id="btn-no-account-try-again" class="auth-submit-btn" style="width: 100%; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: #fff; padding: 0.85rem; border-radius: 50px; font-weight: 600; font-size: 0.9rem; cursor: pointer;">Try Another Email</button>
+      </div>
+
+      <!-- VIEW: PHONE NOT REGISTERED -->
+      <div id="web-login-phone-unregistered-view" style="display: none; flex-direction: column; align-items: center; text-align: center; width: 100%; animation: welcomeFadeIn 0.5s ease;">
+        <div style="width: 64px; height: 64px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem;">
+          <svg style="width: 32px; height: 32px; color: #ef4444;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        </div>
+        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 800; color: #fff; margin: 0 0 0.5rem 0; letter-spacing: -0.5px;">Phone Number Not Registered</h3>
+        <p style="font-size: 0.9rem; color: #94a3b8; line-height: 1.5; margin-bottom: 2rem;">We couldn't find an account associated with this phone number.</p>
+        
+        <button type="button" id="btn-phone-unregistered-create" class="auth-submit-btn" style="width: 100%; border: none; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; margin-bottom: 1rem; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);">Create Account</button>
+        <button type="button" id="btn-phone-unregistered-try-again" class="auth-submit-btn" style="width: 100%; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: #fff; padding: 0.85rem; border-radius: 50px; font-weight: 600; font-size: 0.9rem; cursor: pointer;">Try Another Number</button>
+      </div>
+
+      <!-- VIEW: GOOGLE NOT REGISTERED -->
+      <div id="web-login-google-unregistered-view" style="display: none; flex-direction: column; align-items: center; text-align: center; width: 100%; animation: welcomeFadeIn 0.5s ease;">
+        <div style="width: 64px; height: 64px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem;">
+          <svg style="width: 32px; height: 32px; color: #ef4444;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        </div>
+        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 800; color: #fff; margin: 0 0 0.5rem 0; letter-spacing: -0.5px;">Account Not Registered</h3>
+        <p style="font-size: 0.9rem; color: #94a3b8; line-height: 1.5; margin-bottom: 2rem;">This Google account is not currently linked to a DnD account.</p>
+        
+        <button type="button" id="btn-google-unregistered-create" class="auth-submit-btn" style="width: 100%; border: none; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; margin-bottom: 1rem; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);">Create Account</button>
+        <button type="button" id="btn-google-unregistered-choose" class="auth-submit-btn" style="width: 100%; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: #fff; padding: 0.85rem; border-radius: 50px; font-weight: 600; font-size: 0.9rem; cursor: pointer; margin-bottom: 0.75rem;">Choose Another Account</button>
+        <button type="button" id="btn-google-unregistered-close" class="auth-submit-btn" style="width: 100%; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: #94a3b8; padding: 0.85rem; border-radius: 50px; font-weight: 600; font-size: 0.9rem; cursor: pointer;">Close</button>
+      </div>
+
+      <!-- VIEW 0: WELCOME SCREEN -->
+      <div id="web-auth-welcome-view" style="display: none; flex-direction: column; align-items: center; text-align: center; width: 100%; animation: welcomeFadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);">
+        <!-- Animated Logo Container -->
+        <div class="welcome-logo-container" style="margin-bottom: 2rem; position: relative;">
+          <!-- Glowing background circles -->
+          <div class="logo-glow" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120px; height: 120px; background: radial-gradient(circle, rgba(99, 102, 241, 0.25) 0%, rgba(168, 85, 247, 0) 70%); border-radius: 50%; filter: blur(8px); animation: logoPulse 3s ease-in-out infinite;"></div>
+          <!-- Real Logo Icon -->
+          <div class="welcome-logo-badge" style="width: 84px; height: 84px; border-radius: 24px; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.4); border: 1px solid rgba(255, 255, 255, 0.15); animation: logoFloat 4s ease-in-out infinite;">
+            <span style="font-family: 'Outfit', sans-serif; font-size: 2.5rem; font-weight: 800; color: #fff; letter-spacing: -1.5px; margin-right: -2px;">DnD</span>
+          </div>
+        </div>
+
+        <!-- Headline & Description with Staggered Fade-in -->
+        <h2 class="welcome-headline" style="font-family: 'Outfit', sans-serif; font-size: 1.85rem; font-weight: 800; color: #ffffff; margin: 0 0 0.75rem 0; line-height: 1.25; background: linear-gradient(to right, #ffffff, #cbd5e1); -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: welcomeSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: 0.1s;">
+          Forge Discipline.<br>Build Consistency.
+        </h2>
+        <p class="welcome-description" style="font-size: 0.925rem; color: #94a3b8; line-height: 1.6; margin: 0 0 2.5rem 0; max-width: 320px; animation: welcomeSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: 0.2s;">
+          Stack wins, build consistency, and level up your daily game. Your rules, your goals, your playground.
+        </p>
+
+        <!-- CTA Buttons -->
+        <div class="welcome-cta-group" style="width: 100%; display: flex; flex-direction: column; gap: 0.85rem; animation: welcomeSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: 0.3s;">
+          <button type="button" id="btn-welcome-signup" style="width: 100%; border: none; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: #fff; padding: 0.95rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35); text-transform: none; letter-spacing: 0.3px;">
+            Start Your Journey
+          </button>
+          
+          <button type="button" id="btn-welcome-login" style="width: 100%; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.03); color: #e2e8f0; padding: 0.95rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
+            I already have an account
+          </button>
+        </div>
+      </div>
+
+      <!-- VIEW: EMAIL EXISTS -->
+      <div id="web-auth-email-exists-view" style="display: none; flex-direction: column; align-items: center; text-align: center; width: 100%; animation: welcomeFadeIn 0.5s ease;">
+        <div class="exists-icon-container" style="margin-bottom: 1.5rem; position: relative;">
+          <div class="exists-icon-badge" style="width: 72px; height: 72px; border-radius: 50%; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.25); display: flex; align-items: center; justify-content: center;">
+            <svg viewBox="0 0 24 24" width="32" height="32" stroke="#818cf8" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display: block;"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+          </div>
+        </div>
+
+        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.35rem; font-weight: 800; color: #ffffff; margin: 0 0 0.75rem 0; line-height: 1.3;">
+          This email is already connected<br>to an existing account.
+        </h3>
+        
+        <p style="font-size: 0.9rem; color: #94a3b8; line-height: 1.5; margin: 0 0 2.2rem 0; max-width: 320px;">
+          We found an account associated with this email address. Would you like to sign in instead?
+        </p>
+
+        <div style="width: 100%; display: flex; flex-direction: column; gap: 0.85rem;">
+          <button type="button" id="btn-exists-goto-login" style="width: 100%; border: none; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; box-shadow: 0 4px 15px rgba(99, 102, 241, 0.35);">
+            Go To Login
+          </button>
+          
+          <button type="button" id="btn-exists-close" style="width: 100%; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.03); color: #e2e8f0; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer;">
+            Close
+          </button>
+        </div>
+      </div>
+
+      <div class="auth-logo-header" style="text-align: center; margin-bottom: 1.5rem;">
+        <span class="auth-logo-icon" style="font-size: 2.2rem; font-weight: 800; color: #fff; letter-spacing: -0.5px;">DnD</span>
+        <div class="auth-logo-subtitle" id="web-auth-title" style="font-size: 1.25rem; font-weight: 700; color: var(--text-muted); margin-top: 0.5rem;">Log in to DnD</div>
+      </div>
+
+      <div class="auth-feedback" id="web-auth-global-feedback" style="margin-bottom: 1.25rem; padding: 0.75rem 1rem; border-radius: 12px; font-size: 0.85rem; font-weight: 600; text-align: center;" hidden></div>
+
+      <!-- FORM 1: LOGIN -->
+      <form id="web-auth-login-form">
+        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 800; color: #fff; margin: 0 0 1.25rem 0; text-align: left; letter-spacing: -0.5px;">Enter Your Email Address</h3>
+        
+        <div class="auth-input-group" style="margin-bottom: 1.25rem;">
+          <input type="email" id="web-login-email" required autocomplete="username" placeholder="you@example.com" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 1.25rem; color: #fff; outline: none; font-size: 0.9rem; transition: border-color 0.2s;">
+        </div>
+
+        <button type="submit" class="auth-submit-btn" id="btn-web-login-continue" style="width: 100%; border: none; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: transform 0.1s; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); margin-bottom: 2rem;">Continue</button>
+
+        <div class="auth-divider" style="margin-bottom: 1.25rem; font-size: 0.78rem; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; display: none !important;">Or Login With</div>
+
+        <div class="auth-sso-container" style="margin-bottom: 0.5rem; display: none !important; flex-direction: column; gap: 0.75rem;">
+          <button type="button" class="auth-sso-btn" id="btn-web-sso-phone" style="width: 100%; display: none !important;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            Phone Number
+          </button>
+          <button type="button" class="auth-sso-btn" id="btn-web-sso-google" style="width: 100%;">
+            <svg viewBox="0 0 24 24"><path fill="#EA4335" d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.47 14.98 0 12 0 7.35 0 3.39 2.67 1.45 6.57l3.79 2.94C6.13 6.94 8.84 5.04 12 5.04z"/><path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.44c-.28 1.47-1.11 2.71-2.36 3.55l3.66 2.84c2.14-1.97 3.75-4.87 3.75-8.54z"/><path fill="#FBBC05" d="M5.24 14.81c-.24-.72-.38-1.49-.38-2.31s.14-1.59.38-2.31L1.45 7.25C.52 9.11 0 11.21 0 13.43c0 2.22.52 4.32 1.45 6.18l3.79-2.94z"/><path fill="#34A853" d="M12 23.43c3.24 0 5.95-1.08 7.93-2.91l-3.66-2.84c-1.01.68-2.31 1.08-4.27 1.08-3.16 0-5.87-1.9-6.76-4.47L1.45 17.23c1.94 3.9 5.9 6.2 10.55 6.2z"/></svg>
+            Google
+          </button>
+        </div>
+        
+        <div class="auth-footer" style="text-align: center; margin-top: 1.5rem; font-size: 0.85rem; color: #64748b;">
+          <span>Don't have an account?</span>
+          <a href="#" id="link-web-goto-signup" style="color: #fff; text-decoration: none; font-weight: 700; margin-left: 0.25rem;">Sign up for DnD</a>
+        </div>
+      </form>
+
+      <!-- FORM 2: SIGNUP (Progressive Wizard) -->
+      <form id="web-auth-signup-form" style="display: none;">
+        <div id="web-signup-step-1" class="signup-step-container">
+          <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 800; color: #fff; margin: 0 0 1.25rem 0; text-align: left; letter-spacing: -0.5px;">Enter Your Email Address</h3>
+          
+          <div class="auth-input-group" style="margin-bottom: 0.75rem;">
+            <input type="email" id="web-signup-email" required placeholder="you@example.com" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 1.25rem; color: #fff; outline: none; font-size: 0.9rem; transition: border-color 0.2s;">
+          </div>
+
+          <button type="button" class="auth-submit-btn" id="btn-web-signup-next-1" style="width: 100%; border: none; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: transform 0.1s; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); margin-bottom: 2rem;">Continue</button>
+
+          <div class="auth-divider" style="margin-bottom: 1.25rem; font-size: 0.78rem; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; display: none !important;">Or Sign Up With</div>
+
+          <div class="auth-sso-container" style="margin-bottom: 0.5rem; display: none !important;">
+            <button type="button" class="auth-sso-btn" id="btn-web-signup-sso-phone" style="margin-bottom: 0.65rem; display: none !important;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+              Phone Number
+            </button>
+            <button type="button" class="auth-sso-btn" id="btn-web-signup-sso-google">
+              <svg viewBox="0 0 24 24"><path fill="#EA4335" d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.47 14.98 0 12 0 7.35 0 3.39 2.67 1.45 6.57l3.79 2.94C6.13 6.94 8.84 5.04 12 5.04z"/><path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.44c-.28 1.47-1.11 2.71-2.36 3.55l3.66 2.84c2.14-1.97 3.75-4.87 3.75-8.54z"/><path fill="#FBBC05" d="M5.24 14.81c-.24-.72-.38-1.49-.38-2.31s.14-1.59.38-2.31L1.45 7.25C.52 9.11 0 11.21 0 13.43c0 2.22.52 4.32 1.45 6.18l3.79-2.94z"/><path fill="#34A853" d="M12 23.43c3.24 0 5.95-1.08 7.93-2.91l-3.66-2.84c-1.01.68-2.31 1.08-4.27 1.08-3.16 0-5.87-1.9-6.76-4.47L1.45 17.23c1.94 3.9 5.9 6.2 10.55 6.2z"/></svg>
+              Google
+            </button>
+          </div>
+        </div>
+
+        <!-- STEP 2: CREATE PASSWORD -->
+        <div id="web-signup-step-2" class="signup-step-container" style="display: none;">
+          <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 800; color: #fff; margin: 0 0 0.5rem 0; text-align: left; letter-spacing: -0.5px;">Create a Password</h3>
+          <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.5; margin: 0 0 1.25rem 0; text-align: left;">
+            A strong password helps keep your account secure.
+          </p>
+
+          <div class="auth-input-group" style="margin-bottom: 1rem;">
+            <div class="auth-pass-wrapper" style="position: relative; width: 100%;">
+              <input type="password" id="web-signup-pass" required placeholder="Password" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 3rem 0.85rem 1.25rem; color: #fff; outline: none; font-size: 0.9rem;">
+              <span class="auth-pass-toggle" id="btn-toggle-web-signup-pass" style="position: absolute; right: 1.25rem; top: 50%; transform: translateY(-50%); cursor: pointer; color: var(--text-muted); font-size: 1.1rem; user-select: none;">👁️</span>
+            </div>
+          </div>
+
+          <div class="auth-input-group" style="margin-bottom: 1rem;">
+            <input type="password" id="web-signup-confirm-pass" required placeholder="Confirm Password" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 1.25rem; color: #fff; outline: none; font-size: 0.9rem;">
+          </div>
+
+          <div class="password-rules-checklist" style="margin-bottom: 1.5rem; padding: 0.5rem; font-size: 0.8rem; color: #94a3b8; display: flex; flex-direction: column; gap: 0.35rem; text-align: left;">
+            <div id="rule-length" style="display: flex; align-items: center; gap: 0.4rem;"><span class="rule-status" style="color:#ef4444; font-weight:bold;">✗</span> At least 8 characters</div>
+            <div id="rule-letter" style="display: flex; align-items: center; gap: 0.4rem;"><span class="rule-status" style="color:#ef4444; font-weight:bold;">✗</span> At least 1 uppercase letter</div>
+            <div id="rule-lowercase" style="display: flex; align-items: center; gap: 0.4rem;"><span class="rule-status" style="color:#ef4444; font-weight:bold;">✗</span> At least 1 lowercase letter</div>
+            <div id="rule-number" style="display: flex; align-items: center; gap: 0.4rem;"><span class="rule-status" style="color:#ef4444; font-weight:bold;">✗</span> At least 1 number or special character</div>
+            <div id="rule-match" style="display: flex; align-items: center; gap: 0.4rem;"><span class="rule-status" style="color:#ef4444; font-weight:bold;">✗</span> Passwords match</div>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem;">
+            <button type="button" class="auth-submit-btn" id="btn-web-signup-back-2" style="flex: 1; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer;">Back</button>
+            <button type="button" class="auth-submit-btn" id="btn-web-signup-next-2" style="flex: 1; border: none; background: #6366f1; color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer;" disabled>Continue</button>
+          </div>
+        </div>
+
+        <!-- STEP 3: DATE OF BIRTH -->
+        <div id="web-signup-step-dob" class="signup-step-container" style="display: none;">
+          <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 800; color: #fff; margin: 0 0 0.5rem 0; text-align: left; letter-spacing: -0.5px;">When Were You Born?</h3>
+          <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.5; margin: 0 0 1.5rem 0; text-align: left;">
+            This helps us personalize your experience and ensure safety.
+          </p>
+
+          <div class="auth-input-group" style="margin-bottom: 2rem;">
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="number" id="web-signup-dob-day" min="1" max="31" placeholder="DD" style="width: 70px; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem; color: #fff; text-align: center; outline: none; font-size: 0.9rem;">
+              <select id="web-signup-dob-month" style="flex: 1; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 1rem; color: #fff; outline: none; font-size: 0.9rem;">
+                <option value="" disabled selected>Month</option>
+                <option value="01">January</option>
+                <option value="02">February</option>
+                <option value="03">March</option>
+                <option value="04">April</option>
+                <option value="05">May</option>
+                <option value="06">June</option>
+                <option value="07">July</option>
+                <option value="08">August</option>
+                <option value="09">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
+              <input type="number" id="web-signup-dob-year" min="1900" max="2026" placeholder="YYYY" style="width: 90px; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem; color: #fff; text-align: center; outline: none; font-size: 0.9rem;">
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem;">
+            <button type="button" class="auth-submit-btn" id="btn-web-signup-back-dob" style="flex: 1; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer;">Back</button>
+            <button type="button" class="auth-submit-btn" id="btn-web-signup-next-dob" style="flex: 1; border: none; background: #6366f1; color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer;">Continue</button>
+          </div>
+        </div>
+
+        <!-- STEP 4: GENDER -->
+        <div id="web-signup-step-gender" class="signup-step-container" style="display: none;">
+          <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 800; color: #fff; margin: 0 0 1.5rem 0; text-align: left; letter-spacing: -0.5px;">What's Your Gender?</h3>
+
+          <div class="auth-input-group" style="margin-bottom: 2rem;">
+            <select id="web-signup-gender" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 1.25rem; color: #fff; outline: none; font-size: 0.9rem;">
+              <option value="" disabled selected>Select gender</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="nonbinary">Non-binary</option>
+              <option value="other">Something else</option>
+              <option value="prefer_not">Prefer not to say</option>
+            </select>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem;">
+            <button type="button" class="auth-submit-btn" id="btn-web-signup-back-gender" style="flex: 1; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer;">Back</button>
+            <button type="button" class="auth-submit-btn" id="btn-web-signup-next-gender" style="flex: 1; border: none; background: #6366f1; color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer;">Continue</button>
+          </div>
+        </div>
+
+        <!-- STEP 5: NAME -->
+        <div id="web-signup-step-name" class="signup-step-container" style="display: none;">
+          <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 800; color: #fff; margin: 0 0 0.5rem 0; text-align: left; letter-spacing: -0.5px;">What Should We Call You?</h3>
+          <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.5; margin: 0 0 1.5rem 0; text-align: left;">
+            Your name will be displayed on your profile and used to personalize your experience throughout the app.
+          </p>
+
+          <div class="auth-input-group" style="margin-bottom: 2rem;">
+            <input type="text" id="web-signup-name-input" placeholder="Full Name" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 1.25rem; color: #fff; outline: none; font-size: 0.9rem;">
+          </div>
+
+          <div style="display: flex; gap: 0.75rem;">
+            <button type="button" class="auth-submit-btn" id="btn-web-signup-back-name" style="flex: 1; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer;">Back</button>
+            <button type="button" class="auth-submit-btn" id="btn-web-signup-submit" style="flex: 1; border: none; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; box-shadow: 0 4px 15px rgba(99, 102, 241, 0.35);">Create Account</button>
+          </div>
+        </div>
+
+        <div class="auth-footer" style="text-align: center; margin-top: 1.5rem; font-size: 0.85rem; color: #64748b;">
+          <span>Already have a profile?</span>
+          <a href="#" id="link-web-goto-login-signup" style="color: #fff; text-decoration: none; font-weight: 700; margin-left: 0.25rem;">Sign In</a>
+        </div>
+      </form>
+
+      <!-- FORM 3: OTP VERIFICATION -->
+      <form id="web-auth-otp-form" style="display: none;">
+        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 800; color: #fff; margin: 0 0 0.5rem 0; text-align: left; letter-spacing: -0.5px;">Verify Your Phone Number</h3>
+        <p id="web-otp-subtitle" style="font-size: 0.85rem; color: #94a3b8; text-align: left; line-height: 1.5; margin-bottom: 1.5rem;">We've sent a 6-digit verification code to your phone number.</p>
+
+        <div class="otp-boxes-container" style="display: flex; justify-content: center; gap: 0.5rem; margin-bottom: 1.5rem;">
+          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="web-otp-box" style="width: 42px; height: 48px; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: #fff; font-size: 1.35rem; font-weight: 700; text-align: center; outline: none; transition: all 0.2s;" autocomplete="one-time-code" />
+          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="web-otp-box" style="width: 42px; height: 48px; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: #fff; font-size: 1.35rem; font-weight: 700; text-align: center; outline: none; transition: all 0.2s;" />
+          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="web-otp-box" style="width: 42px; height: 48px; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: #fff; font-size: 1.35rem; font-weight: 700; text-align: center; outline: none; transition: all 0.2s;" />
+          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="web-otp-box" style="width: 42px; height: 48px; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: #fff; font-size: 1.35rem; font-weight: 700; text-align: center; outline: none; transition: all 0.2s;" />
+          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="web-otp-box" style="width: 42px; height: 48px; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: #fff; font-size: 1.35rem; font-weight: 700; text-align: center; outline: none; transition: all 0.2s;" />
+          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="web-otp-box" style="width: 42px; height: 48px; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: #fff; font-size: 1.35rem; font-weight: 700; text-align: center; outline: none; transition: all 0.2s;" />
+        </div>
+
+        <p style="font-size: 0.78rem; color: #64748b; line-height: 1.45; text-align: left; margin: 0 0 1.5rem 0; padding: 0 0.5rem;">
+          ⚠️ OTP is valid only for a limited duration. Never share your verification code with anyone. DnD will never ask for your OTP outside the verification process. Request a new code if the current one expires.
+        </p>
+
+        <span id="web-otp-countdown-text" style="display: block; font-size: 0.8rem; color: #818cf8; font-weight: bold; text-align: center; margin-bottom: 1.25rem;">OTP expires in: 60s</span>
+
+        <button type="submit" class="auth-submit-btn" id="btn-web-otp-submit" style="width: 100%; border: none; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; margin-bottom: 1rem; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);">Verify &amp; Continue</button>
+
+        <div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem;">
+          <button type="button" class="auth-submit-btn" id="btn-web-resend-otp-v2" style="flex: 1; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: #fff; padding: 0.75rem; border-radius: 50px; font-weight: 600; font-size: 0.85rem; cursor: pointer;" disabled>Resend OTP</button>
+          <button type="button" class="auth-submit-btn" id="btn-web-edit-phone" style="flex: 1; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: #fff; padding: 0.75rem; border-radius: 50px; font-weight: 600; font-size: 0.85rem; cursor: pointer;">Edit Number</button>
+        </div>
+      </form>
+
+      <!-- FORM 4: FORGOT PASSWORD -->
+      <form id="web-auth-forgot-form" style="display: none;">
+        <p style="font-size: 0.85rem; color: #94a3b8; text-align: center; line-height: 1.5; margin-bottom: 1.5rem;">Enter your registered email address and we'll send you a recovery OTP.</p>
+
+        <div class="auth-input-group" style="margin-bottom: 1.5rem;">
+          <label style="display: block; font-size: 0.8rem; font-weight: 700; color: #94a3b8; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Email Address</label>
+          <input type="email" id="web-forgot-email" required placeholder="you@example.com" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 1.25rem; color: #fff; outline: none; font-size: 0.9rem;">
+        </div>
+
+        <button type="submit" class="auth-submit-btn" style="width: 100%; border: none; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: #fff; padding: 0.85rem; border-radius: 50px; font-weight: 700; font-size: 0.9rem; cursor: pointer;">Send Recovery Code</button>
+
+        <div style="text-align: center; margin-top: 1.5rem; font-size: 0.85rem;">
+          <a href="#" id="link-web-forgot-back" style="color: #94a3b8; text-decoration: none; font-weight: 700;">Back to Sign In</a>
+        </div>
+      </form>
+
+      <!-- FORM 5: RESET PASSWORD -->
+      <form id="web-auth-reset-form" style="display: none;">
+        <p style="font-size: 0.85rem; color: #94a3b8; text-align: center; line-height: 1.5; margin-bottom: 1.5rem;">Enter and confirm your new password below.</p>
+
+        <div class="auth-input-group" id="web-reset-code-group" style="margin-bottom: 1rem; display: none;">
+          <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #94a3b8; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.5px;">OTP Code</label>
+          <input type="text" id="web-reset-code" placeholder="Enter 6-digit code" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.8rem 1.25rem; color: #fff; outline: none; font-size: 0.85rem; text-align: center; font-weight: bold; letter-spacing: 2px;">
+        </div>
+
+        <div class="auth-input-group" style="margin-bottom: 1rem;">
+          <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #94a3b8; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.5px;">New Password</label>
+          <div class="auth-pass-wrapper" style="position: relative; width: 100%;">
+            <input type="password" id="web-reset-new-pass" required placeholder="New Password" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.8rem 3rem 0.8rem 1.25rem; color: #fff; outline: none; font-size: 0.85rem;">
+            <span class="auth-pass-toggle" id="btn-toggle-web-reset-pass" style="position: absolute; right: 1.25rem; top: 50%; transform: translateY(-50%); cursor: pointer; color: var(--text-muted); font-size: 1.1rem; user-select: none;">👁️</span>
+          </div>
+          <span style="display: block; font-size: 0.7rem; color: #64748b; margin-top: 0.25rem; padding-left: 0.5rem;">Must contain uppercase, lowercase, digit, and special symbol.</span>
+        </div>
+
+        <div class="auth-input-group" style="margin-bottom: 1.5rem;">
+          <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #94a3b8; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.5px;">Confirm New Password</label>
+          <input type="password" id="web-reset-confirm-pass" required placeholder="Confirm New Password" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.8rem 1.25rem; color: #fff; outline: none; font-size: 0.85rem;">
+        </div>
+
+        <button type="submit" class="auth-submit-btn" style="width: 100%; border: none; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: #fff; padding: 0.85rem; border-radius: 50px; font-weight: 700; font-size: 0.9rem; cursor: pointer;">Reset Password</button>
+
+        <div style="text-align: center; margin-top: 1.5rem; font-size: 0.85rem;">
+          <a href="#" id="link-web-reset-back" style="color: #94a3b8; text-decoration: none; font-weight: 700;">Back to Sign In</a>
+        </div>
+      </form>
+
+      <!-- FORM 6: PHONE AUTH ENTRY -->
+      <form id="web-auth-phone-form" style="display: none;">
+        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 800; color: #fff; margin: 0 0 0.5rem 0; text-align: left; letter-spacing: -0.5px;">Enter Your Phone Number</h3>
+        <p style="font-size: 0.85rem; color: #94a3b8; text-align: left; line-height: 1.5; margin-bottom: 1.25rem;">The phone number will be used for account verification and security purposes.</p>
+        
+        <!-- Country Selector -->
+        <div class="auth-input-group" style="margin-bottom: 1.25rem; position: relative;">
+          <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #94a3b8; margin-bottom: 0.45rem; text-transform: uppercase; letter-spacing: 0.5px;">Country / Region</label>
+          <div id="country-selector-trigger" style="display: flex; align-items: center; justify-content: space-between; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 1.25rem; color: #fff; cursor: pointer; font-size: 0.9rem; transition: border-color 0.2s;">
+            <span id="country-selected-info"><span style="margin-right: 8px;">🇮🇳</span>India (+91)</span>
+            <span style="font-size: 0.8rem; color: #94a3b8;">▼</span>
+          </div>
+          <!-- Dropdown search list -->
+          <div id="country-dropdown-list" style="display: none; position: absolute; top: calc(100% + 5px); left: 0; right: 0; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; z-index: 1000; max-height: 200px; overflow-y: auto; padding: 0.5rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+            <input type="text" id="country-search-input" placeholder="Search country..." style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.5rem 1rem; color: #fff; font-size: 0.85rem; outline: none; margin-bottom: 0.5rem;">
+            <div id="country-options-container" style="display: flex; flex-direction: column; gap: 2px;">
+              <!-- Options populated dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <div class="auth-input-group" style="margin-bottom: 1.25rem;">
+          <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #94a3b8; margin-bottom: 0.45rem; text-transform: uppercase; letter-spacing: 0.5px;">Phone Number</label>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <div id="phone-dial-code-badge" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 1.25rem; color: #fff; font-size: 0.9rem; font-weight: 700; min-width: 60px; text-align: center;">+91</div>
+            <input type="tel" inputmode="numeric" pattern="[0-9]*" id="web-phone-number" required placeholder="Phone number" style="flex: 1; box-sizing: border-box; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; padding: 0.85rem 1.25rem; color: #fff; outline: none; font-size: 0.9rem;">
+          </div>
+        </div>
+
+        <p style="font-size: 0.78rem; color: #64748b; line-height: 1.45; text-align: left; margin: 0 0 1.5rem 0; padding: 0 0.5rem;">
+          ℹ️ A verification code will be sent to the entered phone number. Standard carrier charges may apply. The verification code is used only for authentication and security. The phone number will help protect and recover the account.
+        </p>
+
+        <button type="submit" class="auth-submit-btn" id="btn-web-phone-submit" style="width: 100%; border: none; background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: #fff; padding: 0.9rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: transform 0.1s; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); margin-bottom: 1.5rem;" disabled>Send OTP</button>
+
+        <div style="text-align: center;">
+          <a href="#" id="link-web-phone-back" style="color: #94a3b8; text-decoration: none; font-weight: 700; font-size: 0.85rem;">Back to Sign In</a>
+        </div>
+      </form>
+
+      <!-- Renders the widget preview exactly as configured -->
+    </div>
+  </div>
 </body>
 </html>

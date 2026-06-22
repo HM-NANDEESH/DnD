@@ -1,0 +1,39 @@
+{
+  "name": "dnd",
+  "version": "1.0.0",
+  "main": "app-v2.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "node build.js",
+    "test": "node --check server.js && node --check server/controllers/authController.js && node --check server/routes/authRoutes.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HM-NANDEESH/DnD.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/HM-NANDEESH/DnD/issues"
+  },
+  "homepage": "https://github.com/HM-NANDEESH/DnD#readme",
+  "description": "",
+  "dependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/ios": "^8.4.0",
+    "@capacitor/local-notifications": "^8.2.0",
+    "@capacitor/preferences": "^8.0.1",
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.3",
+    "express-rate-limit": "^7.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.15",
+    "twilio": "^6.0.2"
+  }
+}

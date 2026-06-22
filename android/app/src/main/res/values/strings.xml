@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">DnD Life Tracker</string>
+    <string name="title_activity_main">DnD Life Tracker</string>
+    <string name="package_name">com.hmnandeesh.dnd</string>
+    <string name="custom_url_scheme">com.hmnandeesh.dnd</string>
+</resources>
