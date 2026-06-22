@@ -31,3 +31,9 @@ www/
 
 # Scratch & temp files
 scratch/
+
+.vercel
+
+# Firebase config keys
+**/google-services.json
+google-services.json
