@@ -767,6 +767,16 @@ const state = {
 
 // --- INITIALIZATION ENGINE ---
 async function initApp() {
+  // SAFETY NET: If JS crashes or initApp takes too long, show login screen after 8s
+  const authFallbackTimer = setTimeout(() => {
+    const loadingView = document.getElementById('web-auth-loading-view');
+    const overlay = document.getElementById('web-auth-overlay');
+    if (overlay && overlay.style.display !== 'none' && loadingView && loadingView.style.display !== 'none') {
+      console.warn('Auth check safety net triggered - showing welcome screen');
+      showWebAuthOverlay('welcome');
+    }
+  }, 8000);
+
   // Self-healing fallbacks for CDN blocks due to Tracking Prevention
   if (typeof lucide === 'undefined') {
     window.lucide = {
@@ -1092,7 +1102,14 @@ async function silentTokenRefresh() {
   if (window.DnDAndroid) return true; // Android container manages session natively
   
   try {
-    const res = await fetch('/api/auth/refresh-token', { method: 'POST' });
+    // Race the API call against a 5-second timeout
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Auth check timed out')), 5000)
+    );
+    const res = await Promise.race([
+      fetch('/api/auth/refresh-token', { method: 'POST' }),
+      timeoutPromise
+    ]);
     if (res.ok) {
       const data = await res.json();
       accessToken = data.accessToken;

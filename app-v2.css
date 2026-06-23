@@ -7740,3 +7740,33 @@ body.light-theme .premium-toast-card {
   border-color: rgba(139, 92, 246, 0.7) !important;
   box-shadow: 0 0 12px rgba(139, 92, 246, 0.25) !important;
 }
+
+/* === Auth Overlay Animations === */
+@keyframes authSpinner {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes welcomeFadeIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes welcomeSlideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes logoPulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+  50% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+}
+
+@keyframes logoFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes successBounce {
+  from { transform: scale(0.5); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dnd-app-cache-v47';
+const CACHE_NAME = 'dnd-app-cache-v48';
 const ASSETS_TO_CACHE = [
   './',
   '/',
