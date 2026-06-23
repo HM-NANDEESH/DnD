@@ -7770,3 +7770,27 @@ body.light-theme .premium-toast-card {
   from { transform: scale(0.5); opacity: 0; }
   to   { transform: scale(1); opacity: 1; }
 }
+
+/* ============================================================
+   AUTH OVERLAY — VISIBILITY NUCLEAR OPTION
+   CSS !important beats JS element.style.x = '...' assignments.
+   The ONLY way to hide the overlay is via the 'auth-dismissed' class.
+   ============================================================ */
+#web-auth-overlay {
+  display: flex !important;
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 2147483647 !important;
+  background: #090d16 !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  overflow-y: auto;
+  font-family: var(--font-primary);
+}
+#web-auth-overlay.auth-dismissed {
+  display: none !important;
+}

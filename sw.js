@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dnd-app-cache-v48';
+const CACHE_NAME = 'dnd-app-cache-v49';
 const ASSETS_TO_CACHE = [
   'index.html',
   'app-v2.css',

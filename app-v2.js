@@ -771,7 +771,7 @@ async function initApp() {
   const authFallbackTimer = setTimeout(() => {
     const loadingView = document.getElementById('web-auth-loading-view');
     const overlay = document.getElementById('web-auth-overlay');
-    if (overlay && overlay.style.display !== 'none' && loadingView && loadingView.style.display !== 'none') {
+    if (overlay && !overlay.classList.contains('auth-dismissed') && loadingView && loadingView.style.display !== 'none') {
       console.warn('Auth check safety net triggered - showing welcome screen');
       showWebAuthOverlay('welcome');
     }
@@ -1124,9 +1124,9 @@ async function silentTokenRefresh() {
       if (usernameDesc) usernameDesc.innerText = `Logged in via Web Account (${data.user.email})`;
       if (btnLogout) btnLogout.style.display = 'inline-block';
       
-      // Hide auth overlay (user is already logged in)
+      // Dismiss auth overlay (user is authenticated)
       const overlay = document.getElementById('web-auth-overlay');
-      if (overlay) overlay.style.display = 'none';
+      if (overlay) overlay.classList.add('auth-dismissed');
       const loadingView = document.getElementById('web-auth-loading-view');
       if (loadingView) loadingView.style.display = 'none';
       return true;
@@ -1179,7 +1179,8 @@ function showWebAuthOverlay(view) {
     console.log('web-auth-overlay element not found!');
     return;
   }
-  overlay.style.display = 'flex';
+  // Ensure overlay is visible (remove dismissed class if present)
+  overlay.classList.remove('auth-dismissed');
   
   // Hide the loading spinner
   const loadingView = document.getElementById('web-auth-loading-view');
