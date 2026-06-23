@@ -1067,6 +1067,7 @@ function initExitConfirmation() {
 // ================= LOCAL USER ACCOUNT SYSTEM =================
 // In-memory access token storage
 let accessToken = null;
+let cachedUser = null;
 
 // Helper to make authenticated requests
 async function authFetch(url, options = {}) {
@@ -1096,6 +1097,7 @@ async function silentTokenRefresh() {
     if (res.ok) {
       const data = await res.json();
       accessToken = data.accessToken;
+      cachedUser = data.user;
       
       const sidebarNameEl = document.querySelector('.profile-name');
       const usernameDisplay = document.getElementById('settings-username-display');
@@ -1117,6 +1119,7 @@ async function silentTokenRefresh() {
   }
   
   accessToken = null;
+  cachedUser = null;
   return false;
 }
 
@@ -1142,7 +1145,20 @@ async function checkAuthStatus() {
     }
   } else {
     // Web Mode
-    const refreshed = await silentTokenRefresh();
+    let refreshed = false;
+    if (accessToken && cachedUser) {
+      refreshed = true;
+      if (sidebarNameEl) sidebarNameEl.innerText = cachedUser.name;
+      if (usernameDisplay) usernameDisplay.innerText = `Profile: ${cachedUser.name}`;
+      if (usernameDesc) usernameDesc.innerText = `Logged in via Web Account (${cachedUser.email})`;
+      if (btnLogout) btnLogout.style.display = 'inline-block';
+      
+      const overlay = document.getElementById('web-auth-overlay');
+      if (overlay) overlay.style.display = 'none';
+    } else {
+      refreshed = await silentTokenRefresh();
+    }
+
     if (!refreshed) {
       showWebAuthOverlay('welcome');
     }
@@ -1227,6 +1243,7 @@ function initLocalAuth() {
         // Web logout
         await fetch('/api/auth/logout', { method: 'POST' });
         accessToken = null;
+        cachedUser = null;
         checkAuthStatus();
       }
     });
@@ -1517,6 +1534,7 @@ function initLocalAuth() {
         const data = await res.json();
         if (res.ok) {
           accessToken = data.accessToken;
+          cachedUser = data.user;
           phoneVerificationToken = ''; // Reset
           showFeedback('✓ Account registered successfully!', false);
           setTimeout(() => {
@@ -1542,6 +1560,7 @@ function initLocalAuth() {
         const data = await res.json();
         if (res.ok) {
           accessToken = data.accessToken;
+          cachedUser = data.user;
           // Hide all signup steps and show success view
           document.getElementById('web-signup-step-name').style.display = 'none';
           document.getElementById('web-signup-success-view').style.display = 'block';
@@ -1636,6 +1655,7 @@ function initLocalAuth() {
       const data = await res.json();
       if (res.ok) {
         accessToken = data.accessToken;
+        cachedUser = data.user;
         showFeedback(`✓ Connected via ${provider}!`, false);
         setTimeout(() => {
           checkAuthStatus();
@@ -1675,6 +1695,7 @@ function initLocalAuth() {
       if (res.ok) {
         webFailedLoginAttempts = 0;
         accessToken = data.accessToken;
+        cachedUser = data.user;
         showFeedback('✓ Welcome!', false);
         setTimeout(() => {
           checkAuthStatus();
@@ -1781,6 +1802,7 @@ function initLocalAuth() {
         if (res.ok) {
           if (data.isRegistered) {
             accessToken = data.accessToken;
+            cachedUser = data.user;
             showFeedback('✓ Verified and Logged in!', false);
             setTimeout(() => {
               checkAuthStatus();
@@ -1814,6 +1836,7 @@ function initLocalAuth() {
         if (res.ok) {
           if (otpType === 'signup') {
             accessToken = data.accessToken;
+            cachedUser = data.user;
             showFeedback('✓ Email verified! Welcome to DnD.', false);
             setTimeout(() => {
               checkAuthStatus();
