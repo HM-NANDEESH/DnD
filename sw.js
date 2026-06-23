@@ -1,7 +1,5 @@
 const CACHE_NAME = 'dnd-app-cache-v48';
 const ASSETS_TO_CACHE = [
-  './',
-  '/',
   'index.html',
   'app-v2.css',
   'app-v2.js',

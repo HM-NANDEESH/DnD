@@ -1203,11 +1203,16 @@ function showWebAuthOverlay(view) {
     }
   }
 
-  document.getElementById('web-auth-login-form').style.display = 'none';
-  document.getElementById('web-auth-signup-form').style.display = 'none';
-  document.getElementById('web-auth-otp-form').style.display = 'none';
-  document.getElementById('web-auth-forgot-form').style.display = 'none';
-  document.getElementById('web-auth-reset-form').style.display = 'none';
+  const loginForm = document.getElementById('web-auth-login-form');
+  const signupForm = document.getElementById('web-auth-signup-form');
+  const otpForm = document.getElementById('web-auth-otp-form');
+  const forgotForm = document.getElementById('web-auth-forgot-form');
+  const resetForm = document.getElementById('web-auth-reset-form');
+  if (loginForm) loginForm.style.display = 'none';
+  if (signupForm) signupForm.style.display = 'none';
+  if (otpForm) otpForm.style.display = 'none';
+  if (forgotForm) forgotForm.style.display = 'none';
+  if (resetForm) resetForm.style.display = 'none';
   const phoneForm = document.getElementById('web-auth-phone-form');
   if (phoneForm) phoneForm.style.display = 'none';
   const googleAuthView = document.getElementById('web-google-auth-view');
@@ -1229,28 +1234,31 @@ function showWebAuthOverlay(view) {
   if (view === 'welcome') {
     if (welcomeView) welcomeView.style.display = 'flex';
   } else if (view === 'login') {
-    title.innerText = '';
-    document.getElementById('web-auth-login-form').style.display = 'block';
+    if (title) title.innerText = '';
+    if (loginForm) loginForm.style.display = 'block';
   } else if (view === 'signup') {
-    title.innerText = 'Sign up for DnD';
-    document.getElementById('web-auth-signup-form').style.display = 'block';
-    
+    if (title) title.innerText = 'Sign up for DnD';
+    if (signupForm) signupForm.style.display = 'block';
     // Reset wizard to Step 1
-    document.getElementById('web-signup-step-1').style.display = 'block';
-    document.getElementById('web-signup-step-2').style.display = 'none';
-    document.getElementById('web-signup-step-3').style.display = 'none';
-    document.getElementById('web-signup-step-4').style.display = 'none';
+    const s1 = document.getElementById('web-signup-step-1');
+    const s2 = document.getElementById('web-signup-step-2');
+    const s3 = document.getElementById('web-signup-step-3');
+    const s4 = document.getElementById('web-signup-step-4');
+    if (s1) s1.style.display = 'block';
+    if (s2) s2.style.display = 'none';
+    if (s3) s3.style.display = 'none';
+    if (s4) s4.style.display = 'none';
   } else if (view === 'otp') {
-    title.innerText = 'Verify Code';
-    document.getElementById('web-auth-otp-form').style.display = 'block';
+    if (title) title.innerText = 'Verify Code';
+    if (otpForm) otpForm.style.display = 'block';
   } else if (view === 'forgot') {
-    title.innerText = 'Reset Password';
-    document.getElementById('web-auth-forgot-form').style.display = 'block';
+    if (title) title.innerText = 'Reset Password';
+    if (forgotForm) forgotForm.style.display = 'block';
   } else if (view === 'reset') {
-    title.innerText = 'Choose New Password';
-    document.getElementById('web-auth-reset-form').style.display = 'block';
+    if (title) title.innerText = 'Choose New Password';
+    if (resetForm) resetForm.style.display = 'block';
   } else if (view === 'phone') {
-    title.innerText = 'Verify Phone';
+    if (title) title.innerText = 'Verify Phone';
     if (phoneForm) phoneForm.style.display = 'block';
   } else if (view === 'google') {
     if (logoHeader) logoHeader.style.display = 'none';
@@ -1259,13 +1267,13 @@ function showWebAuthOverlay(view) {
     if (logoHeader) logoHeader.style.display = 'none';
     if (googleAnotherView) googleAnotherView.style.display = 'flex';
   } else if (view === 'login-no-account') {
-    title.innerText = '';
+    if (title) title.innerText = '';
     if (noAccountView) noAccountView.style.display = 'flex';
   } else if (view === 'login-phone-unregistered') {
-    title.innerText = '';
+    if (title) title.innerText = '';
     if (phoneUnregView) phoneUnregView.style.display = 'flex';
   } else if (view === 'login-google-unregistered') {
-    title.innerText = '';
+    if (title) title.innerText = '';
     if (googleUnregView) googleUnregView.style.display = 'flex';
   }
 }
