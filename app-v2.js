@@ -1129,6 +1129,9 @@ async function silentTokenRefresh() {
       if (overlay) overlay.style.display = 'none';
       const loadingView = document.getElementById('web-auth-loading-view');
       if (loadingView) loadingView.style.display = 'none';
+      // Show app container (was hidden while auth overlay was displayed)
+      const appContainerOnAuth = document.querySelector('.app-container');
+      if (appContainerOnAuth) appContainerOnAuth.style.display = '';
       return true;
     }
   } catch (err) {
@@ -1164,6 +1167,10 @@ async function checkAuthStatus() {
     const refreshed = await silentTokenRefresh();
     if (!refreshed) {
       showWebAuthOverlay('welcome');
+    } else {
+      // Auth succeeded (e.g. after login) — ensure app content is rendered
+      await updateViewContent();
+      if (typeof lucide !== 'undefined') lucide.createIcons();
     }
   }
 }
@@ -1176,6 +1183,9 @@ function showWebAuthOverlay(view) {
     return;
   }
   overlay.style.display = 'flex';
+  // Hide the main app so it doesn't show through the overlay
+  const appContainer = document.querySelector('.app-container');
+  if (appContainer) appContainer.style.display = 'none';
   
   // Hide the loading spinner
   const loadingView = document.getElementById('web-auth-loading-view');
@@ -2562,6 +2572,8 @@ function initLocalAuth() {
 
 // --- VIEW CONTROLLER ---
 async function updateViewContent() {
+  // Guard: never render the app dashboard when the user is not authenticated
+  if (!accessToken && !window.DnDAndroid) return;
   updateUserXPHeader();
 
   // Show bell and calendar buttons only on Dashboard view
