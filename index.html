@@ -2752,6 +2752,29 @@
     </div>
   </div>
 
+  <!-- Generic PWA install instructions modal -->
+  <div class="modal-overlay" id="modal-pwa-generic-install" style="z-index: 3200;">
+    <div class="modal-card" style="width: 440px; max-width: 90vw; background: rgba(15, 23, 42, 0.98); border: 1px solid var(--border-glass-strong); padding: 1.5rem; border-radius: 20px;">
+      <div class="modal-header" style="border-bottom: none; padding-bottom: 0; display: flex; align-items: center; justify-content: space-between;">
+        <h3 style="font-size: 1.1rem; font-weight: 800; color: #fff; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+          <span>📱</span> Install DnD App
+        </h3>
+        <button class="modal-close-btn" id="btn-close-pwa-generic-modal" style="background: transparent; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; line-height: 1;">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 1rem 0; text-align: left; display: flex; flex-direction: column; gap: 1rem; color: var(--text-main); font-size: 0.85rem; line-height: 1.5;">
+        <p>You can install this app directly onto your home screen or desktop for a fullscreen offline experience.</p>
+        <div style="display: flex; flex-direction: column; gap: 0.75rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); padding: 1rem; border-radius: 12px;">
+          <strong style="color: #fff;">How to Install:</strong>
+          <ul style="margin: 0.25rem 0 0 1.25rem; padding-left: 0; display: flex; flex-direction: column; gap: 0.5rem; list-style-type: disc;">
+            <li><strong>Android (Chrome)</strong>: Tap the three dots menu (<i data-lucide="more-vertical" style="width:12px; height:12px; display:inline-block; vertical-align:middle;"></i>) and select <strong>"Add to Home screen"</strong> or <strong>"Install app"</strong>.</li>
+            <li><strong>Desktop (Chrome / Edge)</strong>: Click the <strong>Install</strong> icon (computer with down arrow, or plus sign) on the right side of the address bar, or click the three dots menu and select <strong>"Install DnD..."</strong>.</li>
+            <li><strong>Firefox</strong>: Tap the menu button in the address bar area and choose <strong>"Install"</strong> or <strong>"Add to Home screen"</strong>.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="db.js?v=1.9.9"></script>
   <script src="audio.js?v=1.9.9"></script>
   <script src="demo.js?v=1.9.9"></script>
@@ -2769,6 +2792,7 @@
       const settingsRow = document.getElementById('pwa-install-settings-row');
       const settingsDesc = document.getElementById('pwa-install-settings-desc');
       const iosModal = document.getElementById('modal-pwa-ios-install');
+      const genericModal = document.getElementById('modal-pwa-generic-install');
 
       const hideInstallUi = () => {
         if (banner) banner.hidden = true;
@@ -2793,6 +2817,8 @@
         }
         if (isIOS && iosModal) {
           iosModal.classList.add('active');
+        } else if (genericModal) {
+          genericModal.classList.add('active');
         }
       };
 
@@ -2813,6 +2839,12 @@
       });
       iosModal?.addEventListener('click', (e) => {
         if (e.target === iosModal) iosModal.classList.remove('active');
+      });
+      document.getElementById('btn-close-pwa-generic-modal')?.addEventListener('click', () => {
+        genericModal?.classList.remove('active');
+      });
+      genericModal?.addEventListener('click', (e) => {
+        if (e.target === genericModal) genericModal.classList.remove('active');
       });
 
       window.addEventListener('pwa-install-available', showBanner);

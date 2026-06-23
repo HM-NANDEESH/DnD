@@ -6648,7 +6648,11 @@ async function initNotifications() {
       } else {
         notifToggle.checked = false;
         if (panel) panel.style.display = 'none';
-        showNotification('⚠️ Permission Denied!', '#f43f5e');
+        if (window.Notification && window.Notification.permission === 'denied') {
+          showNotification('🔒 Blocked! Click the lock icon next to the URL in your browser address bar to allow notifications.', '#f43f5e');
+        } else {
+          showNotification('⚠️ Permission Denied!', '#f43f5e');
+        }
       }
     } else {
       await state.db.setSetting('notifications_enabled', false);
