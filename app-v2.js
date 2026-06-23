@@ -851,6 +851,31 @@ async function initApp() {
   await reloadStateData();
   await checkAuthStatus();
 
+  // === NUCLEAR OVERLAY ENFORCER ===
+  // If unauthenticated, use inline !important (highest possible CSS priority)
+  // + MutationObserver to instantly re-apply if anything tries to hide the overlay.
+  if (!accessToken && !window.DnDAndroid) {
+    const _ovEl = document.getElementById('web-auth-overlay');
+    if (_ovEl) {
+      let _ovObs;
+      const _enforceOverlay = () => {
+        if (accessToken) { if (_ovObs) _ovObs.disconnect(); return; }
+        if (_ovObs) _ovObs.disconnect();
+        _ovEl.style.setProperty('display', 'flex', 'important');
+        _ovEl.style.setProperty('position', 'fixed', 'important');
+        _ovEl.style.setProperty('inset', '0', 'important');
+        _ovEl.style.setProperty('background-color', '#090d16', 'important');
+        _ovEl.style.setProperty('z-index', '2147483647', 'important');
+        _ovEl.classList.remove('auth-dismissed');
+        if (_ovObs) _ovObs.observe(_ovEl, { attributes: true, attributeFilter: ['style', 'class'] });
+      };
+      _ovObs = new MutationObserver(_enforceOverlay);
+      _enforceOverlay(); // apply immediately
+      window._authOverlayEnforcer = { obs: _ovObs, el: _ovEl };
+      console.log('Auth overlay enforcer active — overlay is locked visible');
+    }
+  }
+
   // 4. Attach event listeners
   attachEventListeners();
   initExitConfirmation();
@@ -863,6 +888,7 @@ async function initApp() {
   updateViewContent();
   lucide.createIcons();
 }
+
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initApp);
@@ -1124,6 +1150,11 @@ async function silentTokenRefresh() {
       if (usernameDesc) usernameDesc.innerText = `Logged in via Web Account (${data.user.email})`;
       if (btnLogout) btnLogout.style.display = 'inline-block';
       
+      // Release the overlay enforcer — user is now authenticated
+      if (window._authOverlayEnforcer) {
+        window._authOverlayEnforcer.obs.disconnect();
+        window._authOverlayEnforcer = null;
+      }
       // Dismiss auth overlay (user is authenticated)
       const overlay = document.getElementById('web-auth-overlay');
       if (overlay) overlay.classList.add('auth-dismissed');
