@@ -1129,9 +1129,6 @@ async function silentTokenRefresh() {
       if (overlay) overlay.style.display = 'none';
       const loadingView = document.getElementById('web-auth-loading-view');
       if (loadingView) loadingView.style.display = 'none';
-      // Show app container (was hidden while auth overlay was displayed)
-      const appContainerOnAuth = document.querySelector('.app-container');
-      if (appContainerOnAuth) appContainerOnAuth.style.display = '';
       return true;
     }
   } catch (err) {
@@ -1183,9 +1180,6 @@ function showWebAuthOverlay(view) {
     return;
   }
   overlay.style.display = 'flex';
-  // Hide the main app so it doesn't show through the overlay
-  const appContainer = document.querySelector('.app-container');
-  if (appContainer) appContainer.style.display = 'none';
   
   // Hide the loading spinner
   const loadingView = document.getElementById('web-auth-loading-view');

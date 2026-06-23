@@ -2755,7 +2755,7 @@
   <script src="db.js?v=1.9.9"></script>
   <script src="audio.js?v=1.9.9"></script>
   <script src="demo.js?v=1.9.9"></script>
-  <script src="app-v2.js?v=1.9.14"></script>
+  <script src="app-v2.js?v=1.9.15"></script>
   
   <!-- PWA Service Worker & Install UI -->
   <script>
@@ -2959,7 +2959,7 @@
   </div>
 
   <!-- ================= DIALOG: WEB FULLSCREEN AUTH OVERLAY ================= -->
-  <div id="web-auth-overlay" style="display: flex; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #090d16; z-index: 3500; align-items: center; justify-content: center; padding: 1.5rem; box-sizing: border-box; overflow-y: auto; font-family: var(--font-primary);">
+  <div id="web-auth-overlay" style="display: flex; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #090d16; z-index: 999999; align-items: center; justify-content: center; padding: 1.5rem; box-sizing: border-box; overflow-y: auto; font-family: var(--font-primary);">
     <div class="modal-card" style="max-width: 440px; width: 100%; border-radius: 20px; padding: 2.2rem 2rem; border: 1px solid rgba(255,255,255,0.08); background: rgba(15, 23, 42, 0.95); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); position: relative;">
       <!-- Back to Welcome button -->
       <button type="button" id="btn-auth-back-to-welcome" style="display: none; position: absolute; top: 1.25rem; left: 1.25rem; background: none; border: none; color: #94a3b8; cursor: pointer; padding: 0.25rem; transition: all 0.2s; z-index: 100; border-radius: 50%;" onmouseover="this.style.color='#fff'; this.style.background='rgba(255,255,255,0.06)'" onmouseout="this.style.color='#94a3b8'; this.style.background='none'">
